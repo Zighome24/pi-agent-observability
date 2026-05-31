@@ -1,0 +1,19 @@
+---
+description: Prime context for pi-observability (telemetry framework + UI) and the Steelman product-agent demo
+---
+
+# Purpose
+
+Build foundational understanding of two cooperating projects in one tree: a Pi coding-agent observability framework (extension → Bun HTTP+SSE+SQLite server → vanilla-JS UI with Form/Function modes, agent subnav, swimlane), and `apps/steelman` — a Bun + Vue product app that embeds a Pi agent in `--mode rpc` with two extensions and renders chat-linked investment-analysis artifacts.
+
+## Workflow
+
+1. Run `git ls-files 2>/dev/null || find . -type f -not -path '*/node_modules/*' -not -path '*/dist/*' -not -path '*/.playwright-cli/*' -not -path '*/storage/runs/*' -not -path '*/.sessions/*' -not -path '*/backups/*' -not -path '*/ai_docs/*' -not -path '*/images/*' -not -name 'obs*.db*' -not -name '*.log' | sort` using the Bash tool to see the file tree
+2. Read `README.md` and `docs/V3-STATUS.md` using the Read tool (top-level architecture, quick-start, shipped v3 state, validation posture, build credits)
+3. Read `justfile` using the Read tool (canonical service-boot orchestration grouped OBSERVABILITY / STEELMAN / AGENTS / EXTRA: `obs`, `all` (optional `watch` arg → `bun --watch`), `steelman-server`, `steelman-server-watch`, `steelman-web`, `agent`, `validate-steelman`, `build-steelman-web` — recipes use `exec env` so SIGTERM cleanup hits real PIDs)
+4. Read `shared/types.ts` using the Read tool (canonical observability wire format — `ObsEvent` envelope + 16 event types incl. `compaction` / `branch_nav`; `AssistantMessagePayload` carries `latency_ms` / `prefill_ms` / `generation_ms` / `output_tps` / `usage.{input,output,cache_read,cache_write,total_tokens,cost_total}`)
+5. Read `extension/pi-observability.ts`, `apps/observability/server.ts`, and `apps/observability/db.ts` using the Read tool (Pi event subscriptions incl. `message_update` for TTFT, ingestion, SQLite persistence, REST `/sessions/:id/{events,stats}` + SSE `/events/stream`)
+6. Read `apps/observability/public/index.html`, `apps/observability/public/app.js`, and `apps/observability/public/swimlane.js` using the Read tool (vanilla-JS UI — `body.layout-form` vs `layout-function` mode CSS lives in index.html, including the Form-mode pill-emoji map; app.js owns `STATE`, single-mode rendering, agent subnav with cost/tokens/cache/TPS/prefill/context; swimlane.js owns multi-lane rendering with sticky-to-bottom MutationObserver + 250ms re-anchor interval)
+7. Read `apps/steelman/README.md`, then skim `apps/steelman/extension/steelman-product.ts`, `apps/steelman/extension/STEELMAN_AGENT_SYSTEM_PROMPT.md`, `apps/steelman/server/src/server.ts`, `apps/steelman/web/src/App.vue`, and `apps/steelman/web/src/markdown.ts` using the Read tool (product demo: Pi RPC defaulting to `gemini-3.5-flash` with both observability + product extensions; the agent's behavior contract lives in the externalized `STEELMAN_AGENT_SYSTEM_PROMPT.md` — loaded at runtime — covering aggressive inline citations and 8 `steelman_emit_artifact` kinds `text/table/bar-chart/pie-chart/trend/scorecard/risk-map/html` with dark-theme rules for `html`; `steelman_research` captures source URLs that render as a collapsed per-response "References" proof; Vue two-pane UI renders markdown chat with clickable `@refs` (via `markdown.ts` marked extension) and the artifacts pane; `STEELMAN_OBS_VIEW` deep-link control)
+8. Read `scripts/validate-swimlane.ts` and `apps/steelman/scripts/validate-steelman.ts` using the Read tool (T1–T4 SSE resync + DOM stress + URL state regression suite, and Steelman mock-mode end-to-end validation)
+9. Summarize your understanding of the project: purpose, stack, structure, key files, entry points (via `just …`), validation commands, and how the observability framework and Steelman product app work together through coordinated extension loading

@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Plan: Expand Steelman Agent's Visual Vocabulary with Bear Artifacts</title>
+<style>
+  :root{
+    --bg:#0A0E1A; --panel:#111726; --ink:#F5F5F0; --muted:#9AA4B2;
+    --cyan:#22D3EE; --amber:#F59E0B; --red:#EF4444; --line:#1E2A3C;
+    --green:#88F7D0; --blue:#7AA7FF;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:16px/1.65 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+  .wrap{max-width:980px;margin:0 auto;padding:48px 24px 96px}
+  header.hero{text-align:center;margin-bottom:36px}
+  header.hero h1{font-size:2.2rem;margin:0 0 10px;letter-spacing:-.02em}
+  .meta{color:var(--muted);font-size:.9rem}
+  .badge{display:inline-block;background:var(--cyan);color:#001018;border-radius:999px;
+         padding:2px 11px;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+  section{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+          padding:24px 28px;margin:20px 0}
+  section>h2{margin:0 0 14px;color:var(--cyan);font-size:1.3rem;
+             border-bottom:1px solid var(--line);padding-bottom:10px}
+  figure{margin:18px 0 0}
+  figure img{width:100%;display:block;border:1px solid var(--line);border-radius:10px}
+  figcaption{color:var(--muted);font-size:.8rem;margin-top:6px;text-align:center}
+  ul,ol{padding-left:22px}
+  li{margin:4px 0}
+  table{width:100%;border-collapse:collapse;margin:12px 0}
+  th,td{border:1px solid var(--line);padding:8px 12px;text-align:left;vertical-align:top}
+  th{background:#0d1422;color:var(--cyan)}
+  pre{background:#0d1422;border:1px solid var(--line);border-radius:8px;padding:14px;overflow:auto}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.86em}
+  :not(pre)>code{background:#0d1422;border:1px solid var(--line);border-radius:6px;
+                 padding:2px 6px;color:var(--amber)}
+  .freeform{border-style:dashed;border-color:var(--cyan)}
+  .freeform>h2::after{content:" · author anything that helps";color:var(--muted);
+                      font-size:.7rem;font-weight:400;text-transform:none}
+  a{color:var(--cyan)}
+
+  /* Custom Playground CSS for Freeform Interactive Zone */
+  .interactive-sandbox {
+    margin-top: 15px;
+    padding: 18px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: #090d16;
+  }
+  .sandbox-header {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.8rem;
+    color: var(--muted);
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 8px;
+    margin-bottom: 12px;
+  }
+  .sandbox-tabs {
+    display: flex;
+    gap: 8px;
+  }
+  .sandbox-tab {
+    background: #111726;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    color: var(--muted);
+    padding: 4px 10px;
+    font-size: 0.75rem;
+    cursor: pointer;
+  }
+  .sandbox-tab.active {
+    background: var(--cyan);
+    color: #000;
+    border-color: var(--cyan);
+  }
+  .sandbox-body {
+    padding: 10px 0;
+  }
+  .quote-preview {
+    border-left: 4px solid var(--cyan);
+    padding: 12px 18px;
+    background: rgba(34, 211, 238, 0.04);
+    border-radius: 0 10px 10px 0;
+    position: relative;
+    font-size: 0.95rem;
+  }
+  .quote-preview::before {
+    content: "“";
+    font-size: 3.5rem;
+    color: rgba(34, 211, 238, 0.15);
+    position: absolute;
+    top: -15px;
+    left: 6px;
+    font-family: Georgia, serif;
+    line-height: 1;
+  }
+  .quote-preview p.q-text {
+    font-style: italic;
+    color: #f0f0f0;
+    margin: 0 0 10px;
+    position: relative;
+    z-index: 1;
+  }
+  .quote-preview .q-attribution {
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+  .quote-preview .q-attribution a {
+    color: var(--cyan);
+    text-decoration: none;
+  }
+  .quote-preview .q-attribution a:hover {
+    text-decoration: underline;
+  }
+  .quote-preview .q-commentary {
+    margin-top: 10px;
+    border-top: 1px dashed var(--line);
+    padding-top: 8px;
+    font-size: 0.85rem;
+    color: #e5e7eb;
+  }
+
+  .timeline-container {
+    display: flex;
+    align-items: center;
+    overflow-x: auto;
+    padding: 20px 0;
+    gap: 15px;
+  }
+  .timeline-node {
+    flex: 1;
+    min-width: 140px;
+    background: #111726;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 10px;
+    text-align: center;
+    position: relative;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+  }
+  .timeline-node.severity-bear { border-top: 3px solid var(--red); }
+  .timeline-node.severity-neutral { border-top: 3px solid var(--amber); }
+  .timeline-node.severity-bull { border-top: 3px solid var(--green); }
+  .timeline-node .node-date {
+    font-size: 0.72rem;
+    color: var(--muted);
+    font-weight: bold;
+    text-transform: uppercase;
+  }
+  .timeline-node .node-label {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: #fff;
+    margin: 4px 0;
+  }
+  .timeline-node .node-badge {
+    font-size: 0.65rem;
+    padding: 1px 4px;
+    border-radius: 3px;
+    display: inline-block;
+  }
+  .timeline-node.severity-bear .node-badge { background: rgba(239, 68, 68, 0.1); color: var(--red); }
+  .timeline-node.severity-neutral .node-badge { background: rgba(245, 158, 11, 0.1); color: var(--amber); }
+  .timeline-node.severity-bull .node-badge { background: rgba(136, 247, 208, 0.1); color: var(--green); }
+  
+  .gauge-track {
+    height: 12px;
+    background: #1e293b;
+    border-radius: 999px;
+    position: relative;
+    margin: 30px 10px 15px;
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.3);
+  }
+  .gauge-gradient {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(to right, var(--red) 0%, var(--amber) 50%, var(--green) 100%);
+    opacity: 0.15;
+  }
+  .gauge-marker {
+    position: absolute;
+    top: -6px;
+    width: 2px;
+    height: 24px;
+    background: currentColor;
+  }
+  .gauge-marker::after {
+    content: attr(data-label);
+    position: absolute;
+    top: -24px;
+    transform: translateX(-50%);
+    font-size: 0.7rem;
+    font-weight: bold;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .gauge-marker.m-bear { color: var(--red); left: 15%; }
+  .gauge-marker.m-base { color: var(--amber); left: 50%; }
+  .gauge-marker.m-bull { color: var(--green); left: 85%; }
+  .gauge-indicator {
+    position: absolute;
+    top: -12px;
+    width: 14px;
+    height: 14px;
+    background: #fff;
+    border: 3px solid var(--blue);
+    border-radius: 50%;
+    transform: translateX(-50%);
+    box-shadow: 0 0 10px rgba(122,167,255,0.8);
+    cursor: pointer;
+  }
+  .gauge-indicator::after {
+    content: attr(data-val);
+    position: absolute;
+    bottom: -20px;
+    transform: translateX(-50%);
+    font-size: 0.75rem;
+    font-weight: 800;
+    color: var(--blue);
+    white-space: nowrap;
+  }
+  .control-slider {
+    width: 100%;
+    margin-top: 15px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <h1>Plan: Expand Steelman Agent's Visual Vocabulary</h1>
+    <p class="meta"><span class="badge">feature</span> &middot; medium</p>
+    <figure>
+      <img src="htmlvspec-steelman-bear-artifacts/00-hero.png" alt="Visual overview — Expand Steelman Agent's Visual Vocabulary">
+      <figcaption>A snapshot of the three new visual artifacts: Quote typography, Catalyst Timeline, and Valuation Gauge, integrated into the dark-mode Steelman dashboard.</figcaption>
+    </figure>
+  </header>
+
+  <section>
+    <h2>Task Description</h2>
+    <p>We want to expand the Investment Steelman agent's visual vocabulary with a family of three new high-impact artifact types to make the bear case land faster and harder. Text-only descriptions of complex, spatial, or numerical timelines and ranges fail to command immediate comprehension. To solve this, we will build:</p>
+    <ol>
+      <li><strong>A quote artifact:</strong> A typography-forward callout in the left pane rendering the exact "receipt" (CEO comments, regulator findings, short-seller lines) with a giant opening quote mark, italic style, and metadata (speaker, role, date, source link), plus room for bear commentary.</li>
+      <li><strong>A catalyst-timeline artifact:</strong> A left-to-right chronological timeline plotting key dated events (earnings miss → covenant breach → downgrade), color-coded by severity (bull/neutral/bear) to show domino pathways and pacing clearly.</li>
+      <li><strong>A valuation-gauge artifact:</strong> A horizontal range bar marking bear/base/bull target cases and placing a "where it trades today" indicator to show how much downside is already priced in.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>Objective</h2>
+    <p>Design and implement the three new visual artifacts across the entire Steelman codebase. Specifically, we will extend the agent extension types and prompt instructions, adjust the API database validation engine on the Bun server, and implement beautiful, dark-theme visual components in the Vue.js SPA frontend using styled HTML, responsive flexbox layout, and custom SVGs.</p>
+  </section>
+
+  <section>
+    <h2>Problem Statement</h2>
+    <p>Currently, the Steelman agent is limited to standard charts (bar, pie, trend), scorecards, risk-maps, raw text, and simple tables. When conveying high-impact evidence such as regulatory warnings or earnings calls quotes, sequential events, or range-bound stock valuations, the agent has to resort to plain text markdown or general tables. These standard formats lack the thematic pacing, typography weight, and spatial grouping necessary to immediately convince users of the bear argument's structure and severity.</p>
+  </section>
+
+  <section>
+    <h2>Solution Approach</h2>
+    <figure>
+      <img src="htmlvspec-steelman-bear-artifacts/01-solution-approach.png" alt="Solution approach">
+      <figcaption>System Architecture showing the flow of custom structured payloads from the agent extension, validated on the backend API server, and beautifully rendered as custom UI in the Vue client.</figcaption>
+    </figure>
+    <figure>
+      <img src="htmlvspec-steelman-bear-artifacts/03-data-structures.png" alt="Data Structures">
+      <figcaption>Data model and JSON Schema representation for each of the three new artifact types: Quote, Catalyst-Timeline, and Valuation-Gauge.</figcaption>
+    </figure>
+    <p>To implement this end-to-end, we will touch each layer of the Steelman stack:</p>
+    <ul>
+      <li><strong>Layer 1: Type Definitions & Schemas:</strong> Add <code>"quote" | "catalyst-timeline" | "valuation-gauge"</code> to the <code>ArtifactKind</code> Union in the extension, the web frontend, and the Bun API server.</li>
+      <li><strong>Layer 2: Frontend Render Blocks:</strong> Write custom Vue rendering nodes inside <code>App.vue</code>'s conditional rendering tree (using <code>v-else-if</code>) that parse the incoming <code>selectedArtifact.data</code> payloads. Make them responsive and dark-theme compliant.</li>
+      <li><strong>Layer 3: System Prompting:</strong> Update <code>STEELMAN_AGENT_SYSTEM_PROMPT.md</code> to explicitly specify the JSON data structures and instruct the agent when and how to select these new types.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Relevant Files</h2>
+    <ul>
+      <li><code>apps/steelman/extension/steelman-product.ts</code>: Pi Extension where <code>ArtifactKind</code> is registered for tool validation.</li>
+      <li><code>apps/steelman/extension/STEELMAN_AGENT_SYSTEM_PROMPT.md</code>: The instructions loaded by the LLM agent to understand how to craft artifacts.</li>
+      <li><code>apps/steelman/web/src/App.vue</code>: Vue frontend containing the tabs, sidebar state, and conditional artifact rendering.</li>
+      <li><code>apps/steelman/web/src/style.css</code>: Global stylesheet containing colors, grid tokens, and styling blocks.</li>
+      <li><code>apps/steelman/server/src/server.ts</code>: Backend router validating data models and managing runs.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Implementation Phases</h2>
+    <figure>
+      <img src="htmlvspec-steelman-bear-artifacts/02-phases.png" alt="Implementation phases">
+      <figcaption>Three-Phase Implementation roadmap detailing core actions from Backend schema definitions to UI rendering, prompt engineering, and end-to-end integration testing.</figcaption>
+    </figure>
+    <table>
+      <thead>
+        <tr>
+          <th>Phase</th>
+          <th>Title</th>
+          <th>Key Actions</th>
+          <th>Success Criteria</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Phase 1</strong></td>
+          <td>Foundation & Server Types</td>
+          <td>Extend the <code>ArtifactKind</code> TS schemas and TypeBox checks across Server, Web client, and Extension files.</td>
+          <td>Typechecking passes, and server accepts new artifact kinds in POST requests.</td>
+        </tr>
+        <tr>
+          <td><strong>Phase 2</strong></td>
+          <td>Core Vue Components</td>
+          <td>Implement the <code>v-else-if</code> blocks in <code>App.vue</code> and custom Tailwind/native CSS definitions in <code>style.css</code>.</td>
+          <td>Interactive components render correctly with mock data; responsive margins preserved.</td>
+        </tr>
+        <tr>
+          <td><strong>Phase 3</strong></td>
+          <td>Prompt Tune & Polish</td>
+          <td>Edit <code>STEELMAN_AGENT_SYSTEM_PROMPT.md</code> to guide LLM schema execution. Test with actual mock LLM runs.</td>
+          <td>Steelman agent emits quotes, timelines, and valuation gauges naturally during real-time chats.</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Step by Step Tasks</h2>
+    <ol>
+      <li>
+        <strong>Update Core Types and Validation</strong>
+        <ul>
+          <li>Edit <code>apps/steelman/extension/steelman-product.ts</code> and update the <code>ArtifactKind</code> variable to include <code>"quote"</code>, <code>"catalyst-timeline"</code>, and <code>"valuation-gauge"</code>.</li>
+          <li>Edit <code>apps/steelman/server/src/server.ts</code> and update <code>type ArtifactKind</code> to include the three new options.</li>
+          <li>Edit <code>apps/steelman/web/src/App.vue</code> and update <code>type ArtifactKind</code>.</li>
+        </ul>
+      </li>
+      <li>
+        <strong>Create Core CSS Classes in <code>style.css</code></strong>
+        <ul>
+          <li>Define styling rules for the typography-forward Quote (including custom italic rendering, metadata layout, and blockquote left-border accents).</li>
+          <li>Define styling rules for the left-to-right Catalyst Timeline (flex containers, severity colors, connector lines, and hover states).</li>
+          <li>Define styling rules for the Valuation Gauge range bar (custom horizontal slider tracks, gradient overlays, target markers, and animated pointers).</li>
+        </ul>
+      </li>
+      <li>
+        <strong>Write Render Templates in <code>App.vue</code></strong>
+        <ul>
+          <li>Add <code>v-else-if="selectedArtifact.kind === 'quote'"</code> render node with quotation icon, attribution link, and thesis commentary.</li>
+          <li>Add <code>v-else-if="selectedArtifact.kind === 'catalyst-timeline'"</code> render node displaying chronological events with color-coding.</li>
+          <li>Add <code>v-else-if="selectedArtifact.kind === 'valuation-gauge'"</code> render node representing valuation targets and current price point.</li>
+        </ul>
+      </li>
+      <li>
+        <strong>Inject System Prompt Guidelines</strong>
+        <ul>
+          <li>Update <code>STEELMAN_AGENT_SYSTEM_PROMPT.md</code> with exact JSON shapes for the new types to ensure high-fidelity agent output.</li>
+        </ul>
+      </li>
+      <li>
+        <strong>Smoke Tests & Validation Commands</strong>
+        <ul>
+          <li>Launch the development servers and verify the UI matches design specifications.</li>
+        </ul>
+      </li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>Testing Strategy</h2>
+    <ul>
+      <li><strong>Unit & Schema Validation:</strong> Verify that emitting incorrect JSON payloads triggers valid TypeBox runtime errors, preventing database corruption.</li>
+      <li><strong>UI Component Visual Verification:</strong> Test extreme bounds on components (e.g., long quotes, 8+ catalyst events, valuation figures with high ranges/negative valuations) to ensure responsive layout bounds hold.</li>
+      <li><strong>Agent Prompt Alignment Test:</strong> Issue 5 target investment theses to the agent. Confirm that at least one Quote, one Timeline, and one Valuation Gauge are produced and cited as clickable `@refs` in the chat responses.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Acceptance Criteria</h2>
+    <ul>
+      <li><strong>Quote Render:</strong> Large typographical quotation mark, bold/italic text body, metadata section with name, role, date, and clickable URL. Explicitly renders secondary commentary block without visual clipping.</li>
+      <li><strong>Catalyst Timeline:</strong> Minimum of 3 nodes displayed horizontally. Nodes are clearly connected from left-to-right and display correct color code according to severity levels: <code>bull</code> (green), <code>neutral</code> (yellow), <code>bear</code> (red).</li>
+      <li><strong>Valuation Gauge:</strong> Multi-value price target slider tracking "Bear" (left), "Base" (mid), and "Bull" (right). Displays "Current Price" indicator cleanly over the target range to show where it currently trades.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Validation Commands</h2>
+    <pre><code># 1. Start the Steelman Server in Development Mode
+cd apps/steelman/server && bun run src/server.ts
+
+# 2. Compile and Start the Vue Frontend SPA
+cd apps/steelman/web && bun run dev
+
+# 3. Perform a mock run validation using the pre-configured script
+bun run apps/steelman/scripts/validate-steelman.ts --mode test-bear-artifacts</code></pre>
+  </section>
+
+  <section class="freeform">
+    <h2>Freeform</h2>
+    <p>To demonstrate how these visual components will render inside the Steelman web app, we have authored an interactive playground below. You can switch between tabs to see the rendered Quote, Catalyst Timeline, and Valuation Gauge styles, with an interactive target slider to adjust values in real-time!</p>
+    
+    <div class="interactive-sandbox">
+      <div class="sandbox-header">
+        <span>Investment Steelman Sandbox View</span>
+        <div class="sandbox-tabs">
+          <button class="sandbox-tab active" onclick="switchSandboxTab('quote')">@bear-quote</button>
+          <button class="sandbox-tab" onclick="switchSandboxTab('timeline')">@bear-timeline</button>
+          <button class="sandbox-tab" onclick="switchSandboxTab('gauge')">@bear-valuation</button>
+        </div>
+      </div>
+      
+      <div class="sandbox-body">
+        <!-- Quote Section -->
+        <div id="sb-quote" class="sb-content">
+          <div class="quote-preview">
+            <p class="q-text">"Our core margins will face severe headwind in the next three quarters. We cannot guarantee compliance with the covenant if demand continues to decline at this rate."</p>
+            <div class="q-attribution">
+              <strong>CEO Richard Hendrick</strong> &middot; <em>Middling Corp</em> (Q1 2026 Earnings Call) &middot; <a href="https://example.com/transcript" target="_blank">View Transcript ↗</a>
+            </div>
+            <div class="q-commentary">
+              <strong>Steelman Analyst Note:</strong> This is a smoking gun admission of the upcoming cash crunch. If demand drops by another 5%, the company will trigger covenant breaches, giving lenders full control of equity distributions.
+            </div>
+          </div>
+        </div>
+
+        <!-- Timeline Section -->
+        <div id="sb-timeline" class="sb-content" style="display:none;">
+          <div class="timeline-container">
+            <div class="timeline-node severity-neutral">
+              <span class="node-date">Oct 14, 2025</span>
+              <div class="node-label">Demand Drop</div>
+              <span class="node-badge">Neutral</span>
+            </div>
+            <div class="timeline-node severity-bear">
+              <span class="node-date">Jan 12, 2026</span>
+              <div class="node-label">Earnings Miss</div>
+              <span class="node-badge">Bear Case</span>
+            </div>
+            <div class="timeline-node severity-bear">
+              <span class="node-date">Apr 08, 2026</span>
+              <div class="node-label">Covenant Breach</div>
+              <span class="node-badge">Severe Bear</span>
+            </div>
+            <div class="timeline-node severity-bear">
+              <span class="node-date">Jul 19, 2026</span>
+              <div class="node-label">Credit Downgrade</div>
+              <span class="node-badge">Severe Bear</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Gauge Section -->
+        <div id="sb-gauge" class="sb-content" style="display:none;">
+          <div class="gauge-track">
+            <div class="gauge-gradient"></div>
+            <div class="gauge-marker m-bear" data-label="Bear: $12"></div>
+            <div class="gauge-marker m-base" data-label="Base: $28"></div>
+            <div class="gauge-marker m-bull" data-label="Bull: $65"></div>
+            <div id="gauge-ind" class="gauge-indicator" data-val="$42" style="left: 65%;"></div>
+          </div>
+          
+          <div style="margin-top: 30px;">
+            <label style="font-size:0.8rem; color:var(--muted); font-weight:700;">Drag Slider to Test "Trades Today" Pointer:</label>
+            <input type="range" min="10" max="75" value="42" class="control-slider" id="priceRange" oninput="updatePriceIndicator(this.value)">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Freeform Interaction Script -->
+    <script>
+      function switchSandboxTab(tabName) {
+        // Toggle tab classes
+        const tabs = document.querySelectorAll('.sandbox-tab');
+        tabs.forEach(t => t.classList.remove('active'));
+        
+        // Find click match
+        let targetIdx = 0;
+        if (tabName === 'timeline') targetIdx = 1;
+        if (tabName === 'gauge') targetIdx = 2;
+        tabs[targetIdx].classList.add('active');
+
+        // Toggle visibility
+        document.getElementById('sb-quote').style.display = tabName === 'quote' ? 'block' : 'none';
+        document.getElementById('sb-timeline').style.display = tabName === 'timeline' ? 'block' : 'none';
+        document.getElementById('sb-gauge').style.display = tabName === 'gauge' ? 'block' : 'none';
+      }
+
+      function updatePriceIndicator(val) {
+        const ind = document.getElementById('gauge-ind');
+        // map $10-$75 to 0%-100%
+        const minVal = 10;
+        const maxVal = 75;
+        const percent = ((val - minVal) / (maxVal - minVal)) * 100;
+        
+        ind.style.left = percent + '%';
+        ind.setAttribute('data-val', '$' + val);
+      }
+    </script>
+  </section>
+
+  <section>
+    <h2>Notes</h2>
+    <p>This implementation will require no external npm package installation; all renderings rely entirely on native HTML/CSS and Vue.js reactivity. The visual gauge is fully SVG-free or thin-CSS-driven, meaning fast load times and no client canvas overhead.</p>
+  </section>
+
+</div>
+</body>
+</html>

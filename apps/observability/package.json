@@ -1,0 +1,14 @@
+{
+  "name": "pi-observability-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch server.ts",
+    "start": "bun server.ts",
+    "smoke": "bash ../../scripts/smoke-server.sh"
+  },
+  "dependencies": {
+    "@types/bun": "latest"
+  }
+}

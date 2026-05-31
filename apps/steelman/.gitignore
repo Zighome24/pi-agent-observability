@@ -1,0 +1,5 @@
+web/node_modules/
+web/dist/
+web/tsconfig.tsbuildinfo
+storage/runs/*.json
+.sessions/

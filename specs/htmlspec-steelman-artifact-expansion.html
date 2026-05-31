@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Plan: Steelman Agent Visual Vocabulary Expansion</title>
+<style>
+  :root{
+    --bg:#0A0E1A; --panel:#111726; --ink:#F5F5F0; --muted:#9AA4B2;
+    --cyan:#22D3EE; --amber:#F59E0B; --red:#EF4444; --line:#1E2A3C;
+    --green:#10B981; --blue:#3B82F6;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:16px/1.65 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+  .wrap{max-width:980px;margin:0 auto;padding:48px 24px 96px}
+  header.hero{text-align:center;margin-bottom:36px}
+  header.hero h1{font-size:2.2rem;margin:0 0 10px;letter-spacing:-.02em}
+  .meta{color:var(--muted);font-size:.9rem}
+  .badge{display:inline-block;background:var(--cyan);color:#001018;border-radius:999px;
+         padding:2px 11px;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+  section{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+          padding:24px 28px;margin:20px 0}
+  section>h2{margin:0 0 14px;color:var(--cyan);font-size:1.3rem;
+             border-bottom:1px solid var(--line);padding-bottom:10px}
+  ul,ol{padding-left:22px}
+  li{margin:4px 0}
+  table{width:100%;border-collapse:collapse;margin:12px 0}
+  th,td{border:1px solid var(--line);padding:8px 12px;text-align:left;vertical-align:top}
+  th{background:#0d1422;color:var(--cyan)}
+  pre{background:#0d1422;border:1px solid var(--line);border-radius:8px;padding:14px;overflow:auto}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.86em}
+  :not(pre)>code{background:#0d1422;border:1px solid var(--line);border-radius:6px;
+                 padding:2px 6px;color:var(--amber)}
+  .freeform{border-style:dashed;border-color:var(--cyan)}
+  .freeform>h2::after{content:" · author anything that helps";color:var(--muted);
+                      font-size:.7rem;font-weight:400;text-transform:none}
+  a{color:var(--cyan)}
+
+  /* --- Freeform Styles --- */
+  .mock-card {
+    background: #0d111b;
+    border: 1px solid #253044;
+    border-radius: 16px;
+    padding: 24px;
+    margin-bottom: 24px;
+  }
+  .mock-title {
+    color: var(--cyan);
+    font-size: 14px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 12px;
+  }
+
+  /* Quote Mock Styles */
+  .mock-quote-container {
+    position: relative;
+    padding-left: 28px;
+    margin-bottom: 16px;
+  }
+  .mock-quote-mark {
+    position: absolute;
+    left: 0;
+    top: -16px;
+    font-size: 64px;
+    line-height: 1;
+    font-family: serif;
+    color: rgba(34, 211, 238, 0.15);
+    user-select: none;
+  }
+  .mock-quote-text {
+    font-size: 1.1rem;
+    font-style: italic;
+    color: #e8edf7;
+    margin: 0 0 10px 0;
+    line-height: 1.5;
+  }
+  .mock-quote-attribution {
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+  .mock-quote-attribution strong {
+    color: #e8edf7;
+  }
+  .mock-quote-commentary {
+    background: rgba(255, 255, 255, 0.03);
+    border-left: 3px solid var(--amber);
+    padding: 12px 16px;
+    border-radius: 0 8px 8px 0;
+    font-size: 0.9rem;
+    margin-top: 14px;
+  }
+  .mock-quote-commentary h4 {
+    margin: 0 0 4px 0;
+    color: var(--amber);
+    font-size: 0.95rem;
+  }
+
+  /* Timeline Mock Styles */
+  .mock-timeline {
+    position: relative;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 40px 10px 10px;
+    background: rgba(13, 17, 27, 0.4);
+    border-radius: 12px;
+    border: 1px solid var(--line);
+  }
+  .mock-timeline-line {
+    position: absolute;
+    top: 50px;
+    left: 20px;
+    right: 20px;
+    height: 2px;
+    background: var(--line);
+    z-index: 1;
+  }
+  .mock-timeline-node {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 23%;
+    z-index: 2;
+  }
+  .mock-node-dot {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #0d111b;
+    border: 4px solid var(--muted);
+    margin-bottom: 12px;
+    box-shadow: 0 0 0 3px #0d111b;
+    transition: all 0.2s;
+  }
+  .mock-node-dot.bull { border-color: var(--green); box-shadow: 0 0 10px rgba(16, 185, 129, 0.4); }
+  .mock-node-dot.neutral { border-color: var(--cyan); box-shadow: 0 0 10px rgba(34, 211, 238, 0.4); }
+  .mock-node-dot.bear { border-color: var(--red); box-shadow: 0 0 10px rgba(239, 68, 68, 0.4); }
+  
+  .mock-node-content {
+    text-align: center;
+    font-size: 0.85rem;
+  }
+  .mock-node-date {
+    display: block;
+    color: var(--muted);
+    font-size: 0.75rem;
+    font-weight: 700;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+  }
+  .mock-node-label {
+    display: block;
+    font-weight: bold;
+    color: #e8edf7;
+    line-height: 1.3;
+  }
+
+  /* Gauge Mock Styles */
+  .mock-gauge-container {
+    background: rgba(13, 17, 27, 0.4);
+    padding: 30px 20px 20px;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    margin-bottom: 16px;
+  }
+  .mock-gauge-track-container {
+    position: relative;
+    height: 48px;
+    margin: 20px 0 10px;
+  }
+  .mock-gauge-track {
+    position: absolute;
+    top: 20px;
+    left: 0;
+    right: 0;
+    height: 8px;
+    background: #1e2a3c;
+    border-radius: 4px;
+  }
+  .mock-gauge-marker {
+    position: absolute;
+    top: 14px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    transform: translateX(-50%);
+  }
+  .mock-gauge-marker-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--muted);
+    border: 2px solid #0d111b;
+  }
+  .mock-gauge-marker.bear .mock-gauge-marker-dot { background: var(--red); }
+  .mock-gauge-marker.base .mock-gauge-marker-dot { background: var(--cyan); }
+  .mock-gauge-marker.bull .mock-gauge-marker-dot { background: var(--green); }
+  
+  .mock-gauge-marker-label {
+    font-size: 0.75rem;
+    color: var(--muted);
+    margin-top: 6px;
+    white-space: nowrap;
+    font-weight: 600;
+  }
+  
+  .mock-gauge-marker.current {
+    top: -2px;
+  }
+  .mock-gauge-marker-arrow {
+    font-size: 12px;
+    color: var(--amber);
+    line-height: 1;
+  }
+  .mock-gauge-marker.current .mock-gauge-marker-label {
+    background: var(--amber);
+    color: #000;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-weight: 800;
+    font-size: 0.72rem;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <h1>Plan: Steelman Agent Visual Vocabulary Expansion</h1>
+    <p class="meta"><span class="badge">Feature</span> &middot; Medium-Complex</p>
+  </header>
+
+  <section>
+    <h2>Task Description</h2>
+    <p>
+      The goal is to expand the Steelman agent's visual vocabulary with three new high-impact artifact types:
+    </p>
+    <ol>
+      <li>
+        <strong>Quote Artifact (<code>quote</code>)</strong>: A typography-forward callout to render critical statements (e.g., from earnings calls, reports, or regulators). It must feature a large opening quotation mark, italicized body, and a clean attribution line with an inline link, with space for a short-thesis commentary block.
+      </li>
+      <li>
+        <strong>Catalyst Timeline Artifact (<code>catalyst-timeline</code>)</strong>: A chronological left-to-right chain of dated events (e.g., covenant breach, ratings downgrade) color-coded by severity (bull/neutral/bear) to visualize pacing and sequence.
+      </li>
+      <li>
+        <strong>Valuation Gauge Artifact (<code>valuation-gauge</code>)</strong>: A horizontal scale that places price targets (bear, base, bull) in relation to the current stock price, providing a quick read on market positioning.
+      </li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>Objective</h2>
+    <p>
+      Equip the Steelman agent with richer visualization options that make structural bear theses and market mispricings instantly legible. The changes span the web frontend (rendering), product-specific TypeScript agent extensions (parameter typing/schema validation), and LLM system prompt instructions (instructing the agent on how/when to use them).
+    </p>
+  </section>
+
+  <section>
+    <h2>Problem Statement</h2>
+    <p>
+      Prose and tabular data are excellent for presenting arguments, but key risk mechanisms in complex investment structures often get lost in translation. Short sellers and hedge funds rely heavily on three analytical structures that currently require manual generation or are flat-out impossible to render using existing generic components (like simple bar/pie charts):
+    </p>
+    <ul>
+      <li><strong>Smoking gun admissions:</strong> Hard quotes from management are the highest form of evidence; they deserve premium typography rather than getting buried in blocks of text.</li>
+      <li><strong>Sequence of failure:</strong> Catalysts represent dynamic domino chains where timing and severity dictate structural breakdowns. Presenting this in prose requires massive cognitive load.</li>
+      <li><strong>Asymmetry mismatch:</strong> Knowing targets is useless without context. The core question is: <em>"Where does the asset trade relative to the risk envelope?"</em> Current price versus target ranges must be instantly legible.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Solution Approach</h2>
+    <p>
+      The implementation integrates these artifacts cleanly across the existing Vue-TS frontend and the Pi agent backend:
+    </p>
+    <ul>
+      <li>
+        <strong>Frontend (Vue-TS):</strong> Extend the <code>App.vue</code> component's <code>ArtifactKind</code> type union, write computed layout/normalization helpers for the three schemas, and construct clean, beautifully stylized templates for each inside the artifact pane. Define responsive styles in <code>style.css</code>.
+      </li>
+      <li>
+        <strong>Pi Agent Extension:</strong> Update <code>steelman-product.ts</code> to register the new literal values in <code>ArtifactKind</code> so the RPC schema validation accepts them.
+      </li>
+      <li>
+        <strong>System Prompting:</strong> Document the schemas and trigger criteria inside <code>STEELMAN_AGENT_SYSTEM_PROMPT.md</code> so the model learns the structural formats and emits them appropriately.
+      </li>
+      <li>
+        <strong>Validation Suite:</strong> Update the validation script to recognize and assert the new artifact kinds are healthy.
+      </li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Relevant Files</h2>
+    <h3>Modified Files</h3>
+    <ul>
+      <li><code>apps/steelman/web/src/App.vue</code>: Extend kinds, write normalization logic, and add rendering templates.</li>
+      <li><code>apps/steelman/web/src/style.css</code>: Add custom CSS tokens and grid/flex styles for quote, timeline, and gauge.</li>
+      <li><code>apps/steelman/extension/steelman-product.ts</code>: Extend TypeBox <code>ArtifactKind</code> union.</li>
+      <li><code>apps/steelman/extension/STEELMAN_AGENT_SYSTEM_PROMPT.md</code>: Document visual schemas and emit guidelines.</li>
+      <li><code>apps/steelman/server/src/server.ts</code>: Update <code>ArtifactKind</code> type definitions.</li>
+      <li><code>apps/steelman/scripts/validate-steelman.ts</code>: Expand assertion array to include new artifact types.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Implementation Phases</h2>
+    <ol>
+      <li>
+        <strong>Phase 1: Backend Type & Validation Expansion</strong>
+        <ul>
+          <li>Extend <code>ArtifactKind</code> in <code>server.ts</code> and <code>steelman-product.ts</code>.</li>
+          <li>Update <code>validate-steelman.ts</code> to include new kinds in the assertion checklist.</li>
+        </ul>
+      </li>
+      <li>
+        <strong>Phase 2: UI Normalization & Rendering (Frontend)</strong>
+        <ul>
+          <li>Update Vue component state types and data normalization blocks in <code>App.vue</code>.</li>
+          <li>Construct the templates using Tailwind-equivalent neat raw CSS classes inside <code>App.vue</code>.</li>
+          <li>Write CSS styles in <code>style.css</code> adhering strictly to the Steelman dark visual identity.</li>
+        </ul>
+      </li>
+      <li>
+        <strong>Phase 3: Agent Prompting & Guidance</strong>
+        <ul>
+          <li>Append the new kinds, sample JSON structures, and strategic guidelines to <code>STEELMAN_AGENT_SYSTEM_PROMPT.md</code>.</li>
+        </ul>
+      </li>
+      <li>
+        <strong>Phase 4: Smoke Test & Verification</strong>
+        <ul>
+          <li>Run the validation scripts to confirm mock flows run, schema parses, and kinds match.</li>
+        </ul>
+      </li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>Step by Step Tasks</h2>
+    <ol>
+      <li>
+        <strong>Step 1: Modify types in Server and Product Extension</strong>
+        <p>Edit <code>apps/steelman/server/src/server.ts</code> and <code>apps/steelman/extension/steelman-product.ts</code> to append <code>"quote" | "catalyst-timeline" | "valuation-gauge"</code> to the <code>ArtifactKind</code> definitions.</p>
+      </li>
+      <li>
+        <strong>Step 2: Update Script Assertions</strong>
+        <p>Add <code>"quote", "catalyst-timeline", "valuation-gauge"</code> to the list of acceptable artifact types verified by <code>apps/steelman/scripts/validate-steelman.ts</code>.</p>
+      </li>
+      <li>
+        <strong>Step 3: App.vue Logic Implementation</strong>
+        <p>Define new interfaces, computed properties/methods for extracting quote data, timeline events, and gauge ranges with proportional position calculations.</p>
+      </li>
+      <li>
+        <strong>Step 4: App.vue Template Additions</strong>
+        <p>Write standard Vue <code>v-else-if</code> template blocks mapping <code>selectedArtifact.kind</code> values to the custom HTML layouts.</p>
+      </li>
+      <li>
+        <strong>Step 5: Write Component Stylesheets</strong>
+        <p>Add precise CSS class rules to <code>apps/steelman/web/src/style.css</code> for proper padding, SVG arrow nodes, timeline chronological dashed pipelines, and high contrast highlighting of current valuations.</p>
+      </li>
+      <li>
+        <strong>Step 6: Revamp System Prompt Instructions</strong>
+        <p>Extend the system guidelines block in <code>apps/steelman/extension/STEELMAN_AGENT_SYSTEM_PROMPT.md</code> to define the target data shapes of the new artifact types with clear markdown guidelines.</p>
+      </li>
+      <li>
+        <strong>Step 7: Re-Build and Execute Tests</strong>
+        <p>Verify that running <code>bun run dev</code> compile finishes successfully and mock verification script passes completely.</p>
+      </li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>Testing Strategy</h2>
+    <p>
+      Testing will be executed in three parts:
+    </p>
+    <ul>
+      <li>
+        <strong>Static compilation checks:</strong> Vite TS compilation will verify typing and properties in the updated frontend build:
+        <pre><code>cd apps/steelman/web && bun run build</code></pre>
+      </li>
+      <li>
+        <strong>Schema validation script:</strong> Run the product-agent validation harness in mock mode:
+        <pre><code>cd apps/steelman && STEELMAN_MOCK=1 bun scripts/validate-steelman.ts</code></pre>
+      </li>
+      <li>
+        <strong>Visual layout review:</strong> Load the web frontend and trigger mock agents using the predefined starter triggers to view the rendering quality, responsiveness, and dark mode alignment.
+      </li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Acceptance Criteria</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Category</th>
+          <th>Requirement Details</th>
+          <th>Verification Method</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Quote Artifact</td>
+          <td>Displays verbatim quote in italic, large decorative quotation marks, speaker block with role, date, and clickable inline URL. Includes thesis commentary container.</td>
+          <td>Render verification in web dashboard with active URL clicking test.</td>
+        </tr>
+        <tr>
+          <td>Timeline Artifact</td>
+          <td>Renders dated milestones in horizontal chain from left to right. Nodes are color-coded based on severity: bull (green), neutral (blue/cyan), bear (red). Supports vertical layout on smaller screen wraps.</td>
+          <td>Review responsive width layouts using Chrome DevTools.</td>
+        </tr>
+        <tr>
+          <td>Valuation Gauge</td>
+          <td>Shows horizontal range containing Bull, Base, and Bear case price tags. Visually indicates where "Current trades today" sits on the relative range spectrum.</td>
+          <td>Compare rendered position of indicator vs numerical coordinates to check math.</td>
+        </tr>
+        <tr>
+          <td>System Alignment</td>
+          <td>The LLM Agent successfully parses the extended MD schema, selects the correct artifact types in tests, and emits standard compliant data structures.</td>
+          <td>Run validation pipeline and check generated run snapshots under <code>storage/runs/</code>.</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Validation Commands</h2>
+    <pre><code># Run local TS compilation to make sure everything builds without error
+cd apps/steelman/web && bun run build
+
+# Run local backstop validation script
+cd apps/steelman && STEELMAN_MOCK=1 bun scripts/validate-steelman.ts</code></pre>
+  </section>
+
+  <!-- FREEFORM ZONE: author ANY self-contained, on-theme HTML/CSS/SVG/JS that aids the plan -->
+  <section class="freeform">
+    <h2>Freeform</h2>
+    <p>
+      This Freeform zone provides **interactive, live-rendered mock components** showing exactly how the new artifacts will render in the Steelman UI. We reuse the application's actual dark visual identity, palette (greens, cyans, reds, and ambers), and layout standards:
+    </p>
+
+    <!-- Quote Artifact Mock -->
+    <div class="mock-card">
+      <div class="mock-title">Component Mockup: Quote Artifact (@tim-cook-clawback)</div>
+      <div class="mock-quote-container">
+        <span class="mock-quote-mark">“</span>
+        <blockquote class="mock-quote-text">
+          Our services division is highly leveraged to external pricing contracts. If the European Commission forces us to open alternative payment APIs, we will see structural ARPU pressure.
+        </blockquote>
+        <div class="mock-quote-attribution">
+          &mdash; <strong>Tim Cook</strong>, CEO &middot; <em>Apple Inc.</em> &middot; 2025-11-01 &middot; <a href="https://example.com/earnings" target="_blank" style="color: var(--cyan); text-decoration: none;">Q4 Transcript</a>
+        </div>
+      </div>
+      <div class="mock-quote-commentary">
+        <h4>Steelman Analysis</h4>
+        This admission directly undermines the core bull thesis of uninterrupted Services margin growth. By proving alternative App Store stores bypass Apple's 30% take-rate, Services ARPU carries significant downside threat.
+      </div>
+    </div>
+
+    <!-- Timeline Artifact Mock -->
+    <div class="mock-card">
+      <div class="mock-title">Component Mockup: Catalyst Timeline Artifact (@liquidity-crunch)</div>
+      <div class="mock-timeline">
+        <div class="mock-timeline-line"></div>
+        
+        <div class="mock-timeline-node">
+          <div class="mock-node-dot bull"></div>
+          <div class="mock-node-content">
+            <span class="mock-node-date">Q3 2025</span>
+            <strong class="mock-node-label">Product Launch</strong>
+          </div>
+        </div>
+
+        <div class="mock-timeline-node">
+          <div class="mock-node-dot neutral"></div>
+          <div class="mock-node-content">
+            <span class="mock-node-date">Q4 2025</span>
+            <strong class="mock-node-label">Sales Warning</strong>
+          </div>
+        </div>
+
+        <div class="mock-timeline-node">
+          <div class="mock-node-dot bear"></div>
+          <div class="mock-node-content">
+            <span class="mock-node-date">Q1 2026</span>
+            <strong class="mock-node-label">Covenant Breach</strong>
+          </div>
+        </div>
+
+        <div class="mock-timeline-node">
+          <div class="mock-node-dot bear"></div>
+          <div class="mock-node-content">
+            <span class="mock-node-date">Q2 2026</span>
+            <strong class="mock-node-label">Credit Downgrade</strong>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Valuation Gauge Mock -->
+    <div class="mock-card">
+      <div class="mock-title">Component Mockup: Valuation Gauge Artifact (@pricing-asymmetry)</div>
+      <div class="mock-gauge-container">
+        <div style="font-size: 11px; font-weight: 700; color: var(--cyan); text-transform: uppercase;">FY 2026 Price Target Envelope ($)</div>
+        <div class="mock-gauge-track-container">
+          <div class="mock-gauge-track"></div>
+          
+          <!-- Bear: $120 (approx 20%) -->
+          <div class="mock-gauge-marker bear" style="left: 20%;">
+            <div class="mock-gauge-marker-dot"></div>
+            <div class="mock-gauge-marker-label">Bear: $120</div>
+          </div>
+          
+          <!-- Base: $180 (approx 50%) -->
+          <div class="mock-gauge-marker base" style="left: 50%;">
+            <div class="mock-gauge-marker-dot"></div>
+            <div class="mock-gauge-marker-label">Base: $180</div>
+          </div>
+
+          <!-- Bull: $250 (approx 85%) -->
+          <div class="mock-gauge-marker bull" style="left: 85%;">
+            <div class="mock-gauge-marker-dot"></div>
+            <div class="mock-gauge-marker-label">Bull: $250</div>
+          </div>
+
+          <!-- Current Trades Today: $220 (approx 70%) -->
+          <div class="mock-gauge-marker current" style="left: 70%;">
+            <div class="mock-gauge-marker-arrow">▼</div>
+            <div class="mock-gauge-marker-label">Trades Today: $220</div>
+          </div>
+        </div>
+      </div>
+      <div style="font-size: 0.85rem; color: var(--muted); line-height: 1.4;">
+        <strong>Asymmetry Diagnostic:</strong> The asset currently trades at <strong>$220</strong>, representing a 66% premium over the Bear Case, and sitting significantly closer to the Bull Case target ($250). This indicates that the market has fully priced in a smooth AI upgrade supercycle, leaving virtually zero margin of safety for operational execution delays.
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Notes</h2>
+    <ul>
+      <li><strong>Frontend framework:</strong> Built with Vue 3 SFCs using single-file setup sugar and clean standard TS logic. No external UI charting libraries are introduced for these artifacts; they are entirely driven by HTML templates, flexboxes, and relative positions, which keeps bundles light and extremely robust.</li>
+      <li><strong>Responsive layouts:</strong> Real timelines utilize horizontal scrollbars or flex wrapping to preserve legibility on narrower mobile and split-view panes.</li>
+    </ul>
+  </section>
+
+</div>
+</body>
+</html>
