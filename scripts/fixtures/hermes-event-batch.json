@@ -1,0 +1,107 @@
+[
+  {
+    "event_id": "hermes-fixture-000-session-start",
+    "ts": "2026-06-11T18:00:00.000Z",
+    "type": "session_start",
+    "session_id": "hermes-fixture-session",
+    "cwd": "/tmp/hermes-workspace",
+    "agent_name": "Hermes smoke fixture",
+    "pool": "hermes",
+    "tags": ["hermes", "smoke", "fixture"],
+    "provider": "anthropic",
+    "model": "claude-sonnet-4-5",
+    "payload": {
+      "reason": "startup"
+    },
+    "seq": 0
+  },
+  {
+    "event_id": "hermes-fixture-001-turn-start",
+    "ts": "2026-06-11T18:00:01.000Z",
+    "type": "turn_start",
+    "session_id": "hermes-fixture-session",
+    "cwd": "/tmp/hermes-workspace",
+    "agent_name": "Hermes smoke fixture",
+    "pool": "hermes",
+    "tags": ["hermes", "smoke", "fixture"],
+    "provider": "anthropic",
+    "model": "claude-sonnet-4-5",
+    "payload": {
+      "turn_index": 1
+    },
+    "seq": 1
+  },
+  {
+    "event_id": "hermes-fixture-002-user-message",
+    "ts": "2026-06-11T18:00:02.000Z",
+    "type": "user_message",
+    "session_id": "hermes-fixture-session",
+    "cwd": "/tmp/hermes-workspace",
+    "agent_name": "Hermes smoke fixture",
+    "pool": "hermes",
+    "tags": ["hermes", "smoke", "fixture"],
+    "provider": "anthropic",
+    "model": "claude-sonnet-4-5",
+    "payload": {
+      "text": "Summarize the current repository status.",
+      "images_count": 0
+    },
+    "seq": 2
+  },
+  {
+    "event_id": "hermes-fixture-003-assistant-message",
+    "ts": "2026-06-11T18:00:03.000Z",
+    "type": "assistant_message",
+    "session_id": "hermes-fixture-session",
+    "cwd": "/tmp/hermes-workspace",
+    "agent_name": "Hermes smoke fixture",
+    "pool": "hermes",
+    "tags": ["hermes", "smoke", "fixture"],
+    "provider": "anthropic",
+    "model": "claude-sonnet-4-5",
+    "payload": {
+      "text": "The repository is clean and ready for a Hermes ingest smoke check.",
+      "thinking": "",
+      "tool_call_ids": [],
+      "stop_reason": "stop",
+      "usage": {
+        "input": 1234,
+        "output": 56,
+        "cache_read": 7890,
+        "cache_write": 12,
+        "total_tokens": 9192,
+        "cost_total": 0.0425
+      },
+      "latency_ms": 1500,
+      "prefill_ms": 250,
+      "generation_ms": 1250,
+      "output_tps": 45,
+      "turn_index": 1
+    },
+    "seq": 3
+  },
+  {
+    "event_id": "hermes-fixture-004-turn-end",
+    "ts": "2026-06-11T18:00:04.000Z",
+    "type": "turn_end",
+    "session_id": "hermes-fixture-session",
+    "cwd": "/tmp/hermes-workspace",
+    "agent_name": "Hermes smoke fixture",
+    "pool": "hermes",
+    "tags": ["hermes", "smoke", "fixture"],
+    "provider": "anthropic",
+    "model": "claude-sonnet-4-5",
+    "payload": {
+      "turn_index": 1,
+      "usage": {
+        "input": 1234,
+        "output": 56,
+        "cache_read": 7890,
+        "cache_write": 12,
+        "total_tokens": 9192,
+        "cost_total": 0.0425
+      }
+    },
+    "seq": 4
+  }
+]
