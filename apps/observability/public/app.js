@@ -10,7 +10,7 @@ const STATE = {
   // V3 regression fix: token must come from ?token=… query param. The hash is
   // for shareable view-state only; we don't want the token in shared URLs.
   token: new URLSearchParams(location.search).get("token") ?? "",
-  view: "single", mode: "form", pool: "", tag: "", search: "", sort: "latest", hideAfter: "30m", showHidden: false,
+  view: "single", mode: "form", pool: "", tag: "", source: "", search: "", sort: "latest", hideAfter: "30m", showHidden: false,
   typeFilter: new Set(), autoScroll: true,
   selectedSessionId: null, sessions: [], events: [], sessionsLoaded: false, hiddenSessions: loadHiddenSessions(),
   sidebarCollapsed: loadSidebarCollapsed(),
@@ -35,6 +35,7 @@ function loadURLState() {
   else { const stored = localStorage.getItem("obs-mode"); if (stored === "form" || stored === "function") STATE.mode = stored; }
   if (p.has("pool")) { STATE.pool = p.get("pool"); poolFilter.value = STATE.pool; }
   if (p.has("tag")) { STATE.tag = p.get("tag"); tagFilter.value = STATE.tag; }
+  if (p.has("source")) { STATE.source = p.get("source"); sourceFilter.value = STATE.source; }
   if (p.has("sort")) { STATE.sort = p.get("sort"); sortSelect.value = STATE.sort; }
   if (p.has("hide_after")) { STATE.hideAfter = p.get("hide_after"); hideAfterSelect.value = STATE.hideAfter; }
   if (p.has("show_hidden")) { STATE.showHidden = p.get("show_hidden") === "1"; showHiddenCB.checked = STATE.showHidden; }
@@ -60,6 +61,7 @@ function saveURLState() {
   if (STATE.mode !== "form") p.set("mode", STATE.mode);
   if (STATE.pool) p.set("pool", STATE.pool);
   if (STATE.tag) p.set("tag", STATE.tag);
+  if (STATE.source) p.set("source", STATE.source);
   if (STATE.sort !== "latest") p.set("sort", STATE.sort);
   if (STATE.hideAfter !== "30m") p.set("hide_after", STATE.hideAfter);
   if (STATE.showHidden) p.set("show_hidden", "1");
@@ -86,6 +88,7 @@ const $ = s => document.querySelector(s);
 const sessionSubnav = (() => { const el = document.querySelector("#session-subnav"); return el; })();
 const poolFilter = $("#pool-filter");
 const tagFilter = $("#tag-filter");
+const sourceFilter = $("#source-filter");
 const sortSelect = $("#sort-select");
 const hideAfterSelect = $("#hide-after-select");
 const showHiddenCB = $("#show-hidden-sessions");
@@ -312,7 +315,7 @@ function renderAgentSubnav() {
   const ctxBarColor = ctxPctUsed > 90 ? "var(--red)" : ctxPctUsed > 70 ? "var(--orange)" : "var(--green)";
   sessionSubnav.innerHTML = `
     <div class="snav-group snav-identity">
-      <div class="snav-name" title="${escapeHtml(info.sid)}">${escapeHtml(info.name)}</div>
+      <div class="snav-name" title="${escapeHtml(info.sid)}">${sourceBadgeHTML(s)}${escapeHtml(info.name)}</div>
       <div class="snav-sid"><code>${info.shortSid}</code>${info.model ? `<span class="snav-model">${escapeHtml(info.model)}</span>` : ""}</div>
       <div class="snav-tags"><span class="snav-pool">${escapeHtml(info.pool)}</span>${tagsHtml}</div>
     </div>
@@ -414,6 +417,53 @@ window.setView = function(mode) {
 
 // ─── Sessions ───────────────────────────────────────────────────────────────
 
+// ─── Session source helpers ───────────────────────────────────────────────
+
+function isHermesLike(value) {
+  return String(value ?? "").toLowerCase().includes("hermes");
+}
+
+function isHermesSession(s) {
+  if (!s) return false;
+  return isHermesLike(s.source)
+    || isHermesLike(s.pool)
+    || (Array.isArray(s.tags) && s.tags.some(isHermesLike))
+    || isHermesLike(s.agent_name);
+}
+
+function isHermesEvent(evt) {
+  if (!evt) return false;
+  return isHermesLike(evt.source)
+    || isHermesLike(evt.pool)
+    || (Array.isArray(evt.tags) && evt.tags.some(isHermesLike))
+    || isHermesLike(evt.agent_name);
+}
+
+function sourceForSession(s) {
+  if (!s) return "";
+  return isHermesSession(s) ? "hermes" : "pi";
+}
+
+function sourceMatchesSession(s) {
+  if (!STATE.source) return true;
+  if (STATE.source === "hermes") return isHermesSession(s);
+  if (STATE.source === "pi") return !isHermesSession(s);
+  return true;
+}
+
+function sourceMatchesEvent(evt) {
+  if (!STATE.source) return true;
+  if (STATE.source === "hermes") return isHermesEvent(evt);
+  if (STATE.source === "pi") return !isHermesEvent(evt);
+  return true;
+}
+
+function sourceBadgeHTML(s) {
+  const source = sourceForSession(s);
+  if (!source) return "";
+  return `<span class="source-badge ${source}" title="source: ${source} (derived from pool/tags/source)">${source}</span>`;
+}
+
 async function fetchSessions() {
   try {
     const url = apiUrl("/sessions", { pool: STATE.pool, tag: STATE.tag, limit: 100 });
@@ -421,7 +471,7 @@ async function fetchSessions() {
     if (!res.ok) return;
     const data = await res.json();
     // Apply sort
-    let sessions = data.sessions ?? [];
+    let sessions = (data.sessions ?? []).filter(sourceMatchesSession);
     if (STATE.sort === "errors") {
       sessions = sessions.filter(s => (STATE.sessionStats[s.session_id]?.error_count ?? 0) > 0);
     }
@@ -557,6 +607,7 @@ function renderSessions() {
     const isAckd = STATE.ackd.has(s.session_id);
     const errDotHtml = hasErr ? ` <span class="err-dot${isAckd ? ' ackd' : ''}">●</span>` : '';
     const name = s.agent_name ?? s.cwd?.split("/").pop() ?? shortId;
+    const sourceBadge = sourceBadgeHTML(s);
     const hiddenNote = hiddenByUser ? ' <span class="session-hidden-note">hidden</span>' : (hiddenByAge ? ' <span class="session-hidden-note">aged</span>' : '');
     const relTime = fmtRel(s.last_ts);
 
@@ -570,7 +621,7 @@ function renderSessions() {
 
     const info = document.createElement("div");
     info.className = "info";
-    info.innerHTML = `<div class="name">${escapeHtml(name)}${errDotHtml}${hiddenNote}</div><div class="uuid">${shortId}${s.model ? " · " + s.model : ""}</div><div class="meta">${s.pool} · ${s.event_count} events · ${relTime}</div>${costStr ? `<div class="cost">${costStr}</div>` : ""}`;
+    info.innerHTML = `<div class="name">${sourceBadge}${escapeHtml(name)}${errDotHtml}${hiddenNote}</div><div class="uuid">${shortId}${s.model ? " · " + s.model : ""}</div><div class="meta">${escapeHtml(s.pool)} · ${(s.tags ?? []).map(escapeHtml).join(", ") || "no tags"} · ${s.event_count} events · ${relTime}</div>${costStr ? `<div class="cost">${costStr}</div>` : ""}`;
 
     if (STATE.view === "single") {
       el.addEventListener("click", () => selectSession(s.session_id));
@@ -950,6 +1001,7 @@ function updateBreadcrumb() {
   const parts = [];
   if (STATE.pool && STATE.pool !== "default") parts.push(`pool=${STATE.pool}`);
   if (STATE.tag) parts.push(`tag=${STATE.tag}`);
+  if (STATE.source) parts.push(`source=${STATE.source}`);
   headerBreadcrumb.textContent = parts.join(" · ");
 }
 
@@ -981,6 +1033,7 @@ function connectSSE() {
     try {
       const evt = JSON.parse(msg.data);
       if (!evt?.event_id) return;
+      if (!sourceMatchesEvent(evt)) return;
       if (STATE.view === "single") appendEventSingle(evt);
       else if (STATE.view === "swimlane") window.__swimlaneOnEvent?.(evt);
       else if (STATE.view === "race") window.__raceOnEvent?.(evt);
@@ -1001,6 +1054,7 @@ function setLive(on) { liveDot.className = on ? "green" : "red"; liveLabel.textC
 function onFilterChange() {
   STATE.pool = poolFilter.value.trim();
   STATE.tag = tagFilter.value.trim();
+  STATE.source = sourceFilter.value;
   updateBreadcrumb();
   updateSSEFilter();
   fetchSessions();
@@ -1011,6 +1065,7 @@ function onFilterChange() {
 
 poolFilter.addEventListener("input", onFilterChange);
 tagFilter.addEventListener("input", onFilterChange);
+sourceFilter.addEventListener("change", onFilterChange);
 
 sortSelect.addEventListener("change", () => {
   STATE.sort = sortSelect.value;
@@ -1064,6 +1119,7 @@ function activityStatus(s) {
 }
 
 function agentLetter(s) {
+  if (isHermesSession(s)) return "H";
   const name = s.agent_name ?? s.cwd?.split("/").pop() ?? s.session_id ?? "?";
   const ch = String(name).trim().charAt(0).toUpperCase();
   return ch || "?";
@@ -1131,7 +1187,7 @@ Object.assign(window.OBS, {
   getState: () => STATE, summaryFor, summaryClass, renderDetailHTML,
   fmtTs, trunc, shortId, fetchSessionEvents, renderSessions, apiUrl, authHeaders,
   fmtRel, fmtTokens, escapeHtml, toolNamePillHTML, saveURLState, updateBreadcrumb,
-  getContextWindow, computeAgentInfo, fmtDuration,
+  getContextWindow, computeAgentInfo, fmtDuration, sourceBadgeHTML, isHermesSession,
 });
 
 // ─── Boot ───────────────────────────────────────────────────────────────────

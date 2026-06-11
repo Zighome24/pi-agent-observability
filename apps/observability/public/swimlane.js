@@ -6,7 +6,7 @@
 
 const STATE = window.__OBS_STATE;
 const O = window.OBS;
-const { summaryFor, summaryClass, renderDetailHTML, fmtTs, trunc, shortId, fetchSessionEvents, renderSessions, apiUrl, authHeaders, fmtRel, fmtTokens, saveURLState, getContextWindow, toolNamePillHTML } = O;
+const { summaryFor, summaryClass, renderDetailHTML, fmtTs, trunc, shortId, fetchSessionEvents, renderSessions, apiUrl, authHeaders, fmtRel, fmtTokens, saveURLState, getContextWindow, toolNamePillHTML, sourceBadgeHTML } = O;
 
 const LANES = new Map();
 let autoAddLanes = true;
@@ -131,7 +131,7 @@ function createLane(sid) {
   const costStr = (STATE.sessionStats[sid]?.total_cost !== undefined) ? `$${STATE.sessionStats[sid].total_cost.toFixed(4)}` : "";
   header.innerHTML = `
     <span class="lane-dot off" id="lane-dot-${sid}"></span>
-    <span class="lane-name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
+    ${sourceBadgeHTML ? sourceBadgeHTML(sess) : ""}<span class="lane-name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
     <span class="lane-model">${sess?.model ?? ""}</span>
     <span class="lane-cost" id="lane-cost-${sid}">${costStr}</span>
     <span id="lane-age-${sid}" style="color:var(--muted);font-size:8px;margin-left:auto;"></span>
@@ -279,8 +279,7 @@ function appendLaneDOM(sid, evt, isLive = false) {
 
   const detail = document.createElement("div");
   detail.className = "lane-evt-detail";
-  const cBtn = `<button class="copy-btn" onclick="event.stopPropagation();OBS.copyEvent('${evt.event_id}')">📋</button>`;
-  detail.innerHTML = `${cBtn}<pre>${escapeHtml(JSON.stringify(evt.payload, null, 2))}</pre>`;
+  detail.innerHTML = renderDetailHTML(evt);
 
   row.addEventListener("click", () => detail.classList.toggle("open"));
 
