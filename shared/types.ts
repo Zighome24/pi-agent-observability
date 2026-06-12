@@ -64,6 +64,18 @@ export interface SessionStartPayload {
   reason: "startup" | "reload" | "new" | "resume" | "fork";
   pi_version?: string;
   previous_session_file?: string;
+  /** Logical run group shared by a dispatcher and any subagent sessions it spawns. */
+  run_id?: string;
+  /** Human-readable name for the run group. */
+  run_name?: string;
+  /** Root/parent run id inherited by subagents, when this session is a child. */
+  parent_run_id?: string;
+  /** Root/parent run name inherited by subagents, when this session is a child. */
+  parent_run_name?: string;
+  /** Root/parent session id inherited by subagents, when this session is a child. */
+  parent_session_id?: string;
+  /** True for the dispatcher/root session that established the run context. */
+  is_run_root?: boolean;
 }
 
 export interface SessionShutdownPayload {
