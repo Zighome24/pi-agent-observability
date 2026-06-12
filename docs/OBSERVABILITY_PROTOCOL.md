@@ -152,7 +152,15 @@ platform:<platform>      # platform:linux, platform:darwin, platform:github-acti
 profile:<profile>        # profile:reviewer, profile:builder, profile:smoke
 source:<source>          # source:local, source:ci, source:cron, source:scheduler
 repo:<owner/name>        # repo:Zighome24/pi-agent-observability, when useful
+run:<run-id>             # stable logical run joining dispatcher + subagents
+run_root                 # this session established the run context
+run_child                # this session inherited the run context
+parent_run:<run-id>      # parent/root run id for child sessions
+parent:<run-name>        # human-readable parent/root run name for child sessions
+parent_session:<id>      # parent/root session id for child sessions
 ```
+
+Run grouping is intentionally implemented as tags so existing `/sessions?tag=run:<id>` filters and SSE tag subscriptions can show all sessions in the run without a database migration. `session_start.payload` may also include optional `run_id`, `run_name`, `parent_run_id`, `parent_run_name`, `parent_session_id`, and `is_run_root` for detail views and future richer grouping.
 
 ### Hermes conventions
 
@@ -166,7 +174,7 @@ The compatibility fixture at [`../scripts/fixtures/hermes-event-batch.json`](../
 
 ### Pi conventions
 
-Pi extension events typically use a stable Pi session id, optional `session_file`, the current `cwd`, `agent_name` from `--o-name`, `pool` from `--o-pool`, and tags from repeated `--o-tag` flags. The compatibility fixture at [`../scripts/fixtures/pi-event-batch.json`](../scripts/fixtures/pi-event-batch.json) demonstrates a Pi-shaped event batch.
+Pi extension events typically use a stable Pi session id, optional `session_file`, the current `cwd`, `agent_name` from `--o-name`, `pool` from `--o-pool`, and tags from repeated `--o-tag` flags. The extension also adds `run:<id>` plus `run_root`/`run_child` tags automatically. Root sessions use `--o-run-id`, `OBS_RUN_ID`, `--o-name`, or the session id as the run id; child Pi processes inherit `OBS_PARENT_RUN_*` environment values from the root so dispatcher and subagents can be filtered together. The compatibility fixture at [`../scripts/fixtures/pi-event-batch.json`](../scripts/fixtures/pi-event-batch.json) demonstrates a Pi-shaped event batch.
 
 ## Compatibility and versioning
 

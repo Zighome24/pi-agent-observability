@@ -128,6 +128,39 @@ function sha256hex(s: string): string {
   return crypto.createHash("sha256").update(s, "utf8").digest("hex");
 }
 
+function firstString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value !== "string") continue;
+    const trimmed = value.trim();
+    if (trimmed) return trimmed;
+  }
+  return undefined;
+}
+
+function normalizeTags(tags: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const tag of tags) {
+    const cleaned = String(tag ?? "").trim();
+    if (!cleaned || seen.has(cleaned)) continue;
+    seen.add(cleaned);
+    out.push(cleaned);
+  }
+  return out;
+}
+
+function appendTag(tags: string[], tag: string | undefined): string[] {
+  if (!tag) return tags;
+  return normalizeTags([...tags, tag]);
+}
+
+// Keep run tags readable and URL/filter friendly without changing the display
+// name. A human name like "pr-build-dash-90p.1" stays the obvious group key;
+// whitespace/control chars collapse to dashes so it remains a single tag.
+function tagValue(value: string): string {
+  return value.trim().replace(/[\s\x00-\x1f]+/g, "-").slice(0, 160);
+}
+
 // Boot-snapshot fields (system prompt, skills, context files, custom/append
 // prompts) are captured verbatim with no truncation — this event fires once
 // per session and the user explicitly wants full fidelity for audit. Bytes
@@ -393,6 +426,11 @@ export default function (pi: ExtensionAPI) {
     type: "string",
     default: undefined,
   });
+  pi.registerFlag("o-run-id", {
+    description: "Logical run id used to group dispatcher and subagent sessions (overrides env OBS_RUN_ID)",
+    type: "string",
+    default: undefined,
+  });
   pi.registerFlag("obs-disable", {
     description: "Disable pi observability extension entirely (overrides env OBS_DISABLE)",
     type: "boolean",
@@ -457,6 +495,36 @@ export default function (pi: ExtensionAPI) {
     } else if (process.env.OBS_TAG) {
       tags = process.env.OBS_TAG.split(",").map(t => t.trim()).filter(Boolean);
     }
+    tags = normalizeTags(tags);
+
+    const sessionId = ctx.sessionManager.getSessionId();
+    const parentRunId = firstString(process.env.OBS_PARENT_RUN_ID);
+    const parentRunName = firstString(process.env.OBS_PARENT_RUN_NAME);
+    const parentSessionId = firstString(process.env.OBS_PARENT_SESSION_ID);
+    const requestedRunId = firstString(pi.getFlag("o-run-id"), process.env.OBS_RUN_ID);
+    const runId = tagValue(requestedRunId || parentRunId || name || sessionId);
+    const runName = firstString(parentRunName, name, runId) || runId;
+
+    // Add stable run tags to every session in this process. If this process was
+    // launched by another observed Pi process, parent tags let the dashboard
+    // filter/group dispatcher + subagents together with tag=run:<id>.
+    tags = appendTag(tags, `run:${runId}`);
+    tags = appendTag(tags, parentRunId ? "run_child" : "run_root");
+    if (parentRunId) {
+      tags = appendTag(tags, `parent_run:${tagValue(parentRunId)}`);
+      tags = appendTag(tags, parentRunName ? `parent:${tagValue(parentRunName)}` : undefined);
+      tags = appendTag(tags, parentSessionId ? `parent_session:${tagValue(parentSessionId)}` : undefined);
+    }
+
+    // Propagate the root run context to child processes launched by this agent
+    // (for example agent-team/scout and agent-team/pr-builder). Pi tool
+    // subprocesses inherit process.env, so child Pi extension instances can
+    // emit the same run:<id> tag without every launcher script remembering to
+    // pass flags manually. Preserve an existing parent context for grandchildren.
+    process.env.OBS_RUN_ID = runId;
+    process.env.OBS_PARENT_RUN_ID ||= runId;
+    process.env.OBS_PARENT_RUN_NAME ||= runName;
+    process.env.OBS_PARENT_SESSION_ID ||= sessionId;
 
     // 3. Reset seq counter + boot-snapshot gate
     seqCounter = 0;
@@ -503,7 +571,7 @@ export default function (pi: ExtensionAPI) {
 
     // 5. Initialize session info
     sessionInfo = {
-      sessionId: ctx.sessionManager.getSessionId(),
+      sessionId,
       sessionFile: ctx.sessionManager.getSessionFile(),
       cwd: ctx.cwd,
       agentName: name,
@@ -514,13 +582,19 @@ export default function (pi: ExtensionAPI) {
     };
 
     // 6. Log boot
-    logObs("obs boot", { serverUrl, pool, tags, agentName: name });
+    logObs("obs boot", { serverUrl, pool, tags, agentName: name, runId, parentRunId });
 
     // 7. Emit session_start event
     const startPayload: SessionStartPayload = {
       reason: event.reason,
       pi_version: (pi as any).version || undefined,
       previous_session_file: event.previousSessionFile,
+      run_id: runId,
+      run_name: runName,
+      parent_run_id: parentRunId,
+      parent_run_name: parentRunName,
+      parent_session_id: parentSessionId,
+      is_run_root: !parentRunId,
     };
     queue.push(createEventEnvelope("session_start", startPayload, sessionInfo));
   });

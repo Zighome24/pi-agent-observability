@@ -464,6 +464,30 @@ function sourceBadgeHTML(s) {
   return `<span class="source-badge ${source}" title="source: ${source} (derived from pool/tags/source)">${source}</span>`;
 }
 
+function runTagForSession(s) {
+  const tags = Array.isArray(s?.tags) ? s.tags : [];
+  return tags.find(t => typeof t === "string" && t.startsWith("run:")) || "";
+}
+
+function runIdForSession(s) {
+  const tag = runTagForSession(s);
+  return tag ? tag.slice(4) : "";
+}
+
+function isRunChildSession(s) {
+  const tags = Array.isArray(s?.tags) ? s.tags : [];
+  return tags.includes("run_child") || tags.some(t => typeof t === "string" && t.startsWith("parent_run:"));
+}
+
+function runBadgeHTML(s) {
+  const runId = runIdForSession(s);
+  if (!runId) return "";
+  const child = isRunChildSession(s);
+  const label = child ? `↳ ${runId}` : `run ${runId}`;
+  const title = `run group: ${runId}. Filter by tag run:${runId} to show dispatcher and child agents together.`;
+  return `<span class="run-badge${child ? " child" : ""}" title="${escapeHtml(title)}">${escapeHtml(label)}</span>`;
+}
+
 async function fetchSessions() {
   try {
     const url = apiUrl("/sessions", { pool: STATE.pool, tag: STATE.tag, limit: 100 });
@@ -608,6 +632,7 @@ function renderSessions() {
     const errDotHtml = hasErr ? ` <span class="err-dot${isAckd ? ' ackd' : ''}">●</span>` : '';
     const name = s.agent_name ?? s.cwd?.split("/").pop() ?? shortId;
     const sourceBadge = sourceBadgeHTML(s);
+    const runBadge = runBadgeHTML(s);
     const hiddenNote = hiddenByUser ? ' <span class="session-hidden-note">hidden</span>' : (hiddenByAge ? ' <span class="session-hidden-note">aged</span>' : '');
     const relTime = fmtRel(s.last_ts);
 
@@ -621,7 +646,7 @@ function renderSessions() {
 
     const info = document.createElement("div");
     info.className = "info";
-    info.innerHTML = `<div class="name">${sourceBadge}${escapeHtml(name)}${errDotHtml}${hiddenNote}</div><div class="uuid">${shortId}${s.model ? " · " + s.model : ""}</div><div class="meta">${escapeHtml(s.pool)} · ${(s.tags ?? []).map(escapeHtml).join(", ") || "no tags"} · ${s.event_count} events · ${relTime}</div>${costStr ? `<div class="cost">${costStr}</div>` : ""}`;
+    info.innerHTML = `<div class="name">${sourceBadge}${runBadge}${escapeHtml(name)}${errDotHtml}${hiddenNote}</div><div class="uuid">${shortId}${s.model ? " · " + s.model : ""}</div><div class="meta">${escapeHtml(s.pool)} · ${(s.tags ?? []).map(escapeHtml).join(", ") || "no tags"} · ${s.event_count} events · ${relTime}</div>${costStr ? `<div class="cost">${costStr}</div>` : ""}`;
 
     if (STATE.view === "single") {
       el.addEventListener("click", () => selectSession(s.session_id));
