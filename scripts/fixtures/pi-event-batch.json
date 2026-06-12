@@ -1,0 +1,123 @@
+[
+  {
+    "event_id": "pi-fixture-000-session-start",
+    "ts": "2026-06-11T18:10:00.000Z",
+    "type": "session_start",
+    "session_id": "pi-fixture-session",
+    "session_file": "/tmp/pi-fixture/session.jsonl",
+    "cwd": "/tmp/pi-workspace",
+    "agent_name": "Pi smoke fixture",
+    "pool": "pi",
+    "tags": ["pi", "smoke", "fixture", "runtime:pi", "source:local"],
+    "provider": "anthropic",
+    "model": "claude-sonnet-4-5",
+    "payload": {
+      "reason": "startup",
+      "pi_version": "fixture"
+    },
+    "seq": 0
+  },
+  {
+    "event_id": "pi-fixture-001-agent-start",
+    "ts": "2026-06-11T18:10:01.000Z",
+    "type": "agent_start",
+    "session_id": "pi-fixture-session",
+    "session_file": "/tmp/pi-fixture/session.jsonl",
+    "cwd": "/tmp/pi-workspace",
+    "agent_name": "Pi smoke fixture",
+    "pool": "pi",
+    "tags": ["pi", "smoke", "fixture", "runtime:pi", "source:local"],
+    "provider": "anthropic",
+    "model": "claude-sonnet-4-5",
+    "payload": {
+      "prompt": "Inspect the repository and report status.",
+      "images_count": 0,
+      "session_id": "pi-fixture-session",
+      "session_file": "/tmp/pi-fixture/session.jsonl",
+      "system_prompt": "You are a coding agent fixture.",
+      "system_prompt_bytes": 31,
+      "system_prompt_sha256": "fixture-sha256",
+      "system_prompt_truncated": false,
+      "system_prompt_options": {
+        "cwd": "/tmp/pi-workspace",
+        "selected_tools": ["read", "bash"]
+      }
+    },
+    "seq": 1
+  },
+  {
+    "event_id": "pi-fixture-002-tool-call",
+    "ts": "2026-06-11T18:10:02.000Z",
+    "type": "tool_call",
+    "session_id": "pi-fixture-session",
+    "session_file": "/tmp/pi-fixture/session.jsonl",
+    "cwd": "/tmp/pi-workspace",
+    "agent_name": "Pi smoke fixture",
+    "pool": "pi",
+    "tags": ["pi", "smoke", "fixture", "runtime:pi", "source:local"],
+    "provider": "anthropic",
+    "model": "claude-sonnet-4-5",
+    "payload": {
+      "tool_call_id": "toolu_pi_fixture_001",
+      "tool_name": "bash",
+      "args": { "command": "git status --short" },
+      "args_truncated": false
+    },
+    "seq": 2
+  },
+  {
+    "event_id": "pi-fixture-003-tool-result",
+    "ts": "2026-06-11T18:10:03.000Z",
+    "type": "tool_result",
+    "session_id": "pi-fixture-session",
+    "session_file": "/tmp/pi-fixture/session.jsonl",
+    "cwd": "/tmp/pi-workspace",
+    "agent_name": "Pi smoke fixture",
+    "pool": "pi",
+    "tags": ["pi", "smoke", "fixture", "runtime:pi", "source:local"],
+    "provider": "anthropic",
+    "model": "claude-sonnet-4-5",
+    "payload": {
+      "tool_call_id": "toolu_pi_fixture_001",
+      "tool_name": "bash",
+      "content_text": "",
+      "content_truncated": false,
+      "is_error": false,
+      "details_summary": { "exit_code": 0 }
+    },
+    "seq": 3
+  },
+  {
+    "event_id": "pi-fixture-004-assistant-message",
+    "ts": "2026-06-11T18:10:04.000Z",
+    "type": "assistant_message",
+    "session_id": "pi-fixture-session",
+    "session_file": "/tmp/pi-fixture/session.jsonl",
+    "cwd": "/tmp/pi-workspace",
+    "agent_name": "Pi smoke fixture",
+    "pool": "pi",
+    "tags": ["pi", "smoke", "fixture", "runtime:pi", "source:local"],
+    "provider": "anthropic",
+    "model": "claude-sonnet-4-5",
+    "payload": {
+      "text": "The working tree is clean.",
+      "thinking": "",
+      "tool_call_ids": ["toolu_pi_fixture_001"],
+      "stop_reason": "stop",
+      "usage": {
+        "input": 900,
+        "output": 25,
+        "cache_read": 100,
+        "cache_write": 0,
+        "total_tokens": 1025,
+        "cost_total": 0.0123
+      },
+      "latency_ms": 1200,
+      "prefill_ms": 200,
+      "generation_ms": 1000,
+      "output_tps": 25,
+      "turn_index": 1
+    },
+    "seq": 4
+  }
+]
