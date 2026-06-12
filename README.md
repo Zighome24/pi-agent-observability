@@ -141,6 +141,8 @@ All three views consume the same SSE stream from `server.ts`. The same `ObsEvent
   <img src="images/05_event_taxonomy.png" alt="ObsEvent hub-and-spoke: central ObsEvent connects to three cluster boxes labeled lifecycle, turn, and meta, each containing the event-type chips" width="780">
 </p>
 
+For the agent-agnostic wire protocol, including Hermes identity conventions, batching, auth, ordering, truncation, and compatibility guidance, see [`docs/OBSERVABILITY_PROTOCOL.md`](docs/OBSERVABILITY_PROTOCOL.md).
+
 `shared/types.ts` is the single source of truth. Every event carries:
 
 - **identity**: `session_id`, `cwd`, `pool`, `tags`, `agent_name`, `provider`, `model`
