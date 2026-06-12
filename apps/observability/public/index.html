@@ -50,7 +50,7 @@
     .session-item.hidden-session{opacity:0.58}
     .session-item input[type=checkbox]{margin-top:2px;flex-shrink:0;accent-color:var(--accent)}
     .session-item .info{flex:1;min-width:0;padding-right:18px}
-    .session-item .name{font-weight:600;color:var(--text);font-size:15px}
+    .session-item .name{font-weight:600;color:var(--text);font-size:15px;display:flex;align-items:center;gap:5px;min-width:0}
     .session-item .uuid{font-family:monospace;color:var(--muted);font-size:13.5px}
     .session-item .meta{color:var(--muted);font-size:13.5px;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .session-item .cost{color:var(--green);font-size:13.5px}
@@ -60,6 +60,9 @@
     .session-item:hover .session-hide-btn,.session-hide-btn:focus{opacity:1;background:var(--pill-bg);color:var(--red);outline:none}
     .session-item.hidden-session .session-hide-btn{color:var(--green)}
     .session-hidden-note{color:var(--orange);font-size:11px;margin-left:4px}
+    .source-badge{display:inline-flex;align-items:center;vertical-align:middle;padding:1px 5px;border-radius:6px;border:1px solid var(--border);font-size:10px;font-weight:700;line-height:1.2;text-transform:uppercase;letter-spacing:0.4px;flex-shrink:0}
+    .source-badge.hermes{background:rgba(163,113,247,0.16);border-color:rgba(163,113,247,0.55);color:#d8c2ff}
+    .source-badge.pi{background:rgba(88,166,255,0.10);border-color:rgba(88,166,255,0.34);color:#9dccff}
     section{flex:1;display:flex;flex-direction:column;overflow:hidden}
     .pane-header{padding:5px 10px;border-bottom:1px solid var(--border);font-size:16.5px;color:var(--muted);background:var(--surface);flex-shrink:0;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
     .pane-header .ticker{margin-left:auto;font-size:13.5px;color:var(--muted)}
@@ -446,6 +449,12 @@
       <input id="pool-filter" type="text" placeholder="default">
       <label for="tag-filter">tag</label>
       <input id="tag-filter" type="text" placeholder="any">
+      <label for="source-filter">source</label>
+      <select id="source-filter">
+        <option value="">All sources</option>
+        <option value="hermes">Hermes</option>
+        <option value="pi">Pi</option>
+      </select>
       <label for="sort-select">sort</label>
       <select id="sort-select">
         <option value="latest">Latest activity</option>
