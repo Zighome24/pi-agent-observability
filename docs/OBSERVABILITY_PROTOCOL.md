@@ -120,6 +120,8 @@ Long-term token and cost analytics are computed from stored raw events; any futu
 - **Default authoritative source:** count usage from `assistant_message.payload.usage`. Each assistant message represents one completed model call and is the unit for token/cost totals, call counts, provider/model breakdowns, and top-N reports.
 - **Do not add `turn_end` usage on top of `assistant_message` usage.** `turn_end.payload.usage` is a compatibility/session-summary rollup and may repeat the same tokens from the assistant message for that turn.
 - **Compatibility fallback:** if a turn has no `assistant_message` with usage, a query may count `turn_end.payload.usage` for that turn. Mark these rows internally as fallback-derived when possible so operators can distinguish old runtimes from normal per-call accounting.
+- **Fallback matching:** match `turn_end` fallback rows by exact `session_id` + numeric `payload.turn_index`. If `turn_index` is missing/non-numeric, treat that `turn_end` as session-level legacy usage only when the session has no assistant-message usage at all; otherwise leave it out of aggregate totals and count it in diagnostics.
+- **Multiple assistant messages in one turn:** count each `assistant_message.payload.usage` row as a distinct model call. A `turn_end` rollup for that same `session_id` + `turn_index` remains non-authoritative and must not be added on top.
 - **Mixed turn rule:** if a turn/session has both assistant-message usage and turn-end usage for the same `session_id` + `turn_index`, prefer the assistant-message rows and ignore the turn-end usage for aggregation.
 - **Call/event counts:** `call_count` should count assistant-message usage rows plus fallback turn-end rows only. Other event types do not increase usage call counts.
 
@@ -134,7 +136,7 @@ Long-term token and cost analytics are computed from stored raw events; any futu
 
 ### Cost fields
 
-- `cost_total` is the provider/emitter's total cost estimate for the model call in the emitter's configured currency (currently treated as USD by the dashboard). Sum it for cost totals.
+- `cost_total` is the provider/emitter's total cost estimate for the model call. New emitters should report normalized USD unless they also include explicit currency/pricing metadata in a future additive schema. Current dashboard totals treat this field as USD; do not mix currencies in aggregate dashboards without a conversion policy.
 - Cache read/write tokens must remain visible as their own dimensions because providers price them differently. Do not infer cache costs from token counts in historical queries unless an explicit pricing table/version is part of that query.
 - Missing `cost_total` means cost is unknown, not free. For numeric sums treat missing/null as `0` and include a `cost_known_count`/`cost_missing_count`-style diagnostic where practical.
 
@@ -179,7 +181,8 @@ Usage summaries and time buckets should keep billable, cache, and diagnostic val
 input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
 total_tokens, context_tokens, cost_total,
 call_count, event_count,
-cost_known_count, cost_missing_count, usage_missing_count, malformed_usage_count
+cost_known_count, cost_missing_count, usage_missing_count, malformed_usage_count,
+total_tokens_reported_count, total_tokens_derived_count, total_tokens_missing_count
 ```
 
 `event_count` may count all matched events for diagnostics, but it is not a model-call count. `call_count` is the count of rows that contributed authoritative or fallback usage.

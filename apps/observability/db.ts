@@ -147,6 +147,29 @@ export function prepare(db: Database): PreparedQueries {
       AND ($tag = '' OR EXISTS (
         SELECT 1 FROM json_each(tags_json) WHERE value = $tag
       ))
+      AND (
+        COALESCE($source, '') = ''
+        OR (
+          COALESCE($source, '') = 'hermes' AND (
+            lower(pool) LIKE '%hermes%'
+            OR lower(COALESCE(agent_name, '')) LIKE '%hermes%'
+            OR EXISTS (
+              SELECT 1 FROM json_each(tags_json)
+              WHERE lower(CAST(value AS TEXT)) LIKE '%hermes%'
+            )
+          )
+        )
+        OR (
+          COALESCE($source, '') = 'pi' AND NOT (
+            lower(pool) LIKE '%hermes%'
+            OR lower(COALESCE(agent_name, '')) LIKE '%hermes%'
+            OR EXISTS (
+              SELECT 1 FROM json_each(tags_json)
+              WHERE lower(CAST(value AS TEXT)) LIKE '%hermes%'
+            )
+          )
+        )
+      )
     ORDER BY last_ts DESC
     LIMIT $limit
   `);

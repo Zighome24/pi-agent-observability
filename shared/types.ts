@@ -61,7 +61,7 @@ export interface ObsEventEnvelope<P = unknown> {
 // ─── Payloads ───────────────────────────────────────────────────────────────
 
 export interface SessionStartPayload {
-  reason: "startup" | "reload" | "new" | "resume" | "fork";
+  reason: "startup" | "reload" | "new" | "resume" | "fork" | (string & {});
   pi_version?: string;
   previous_session_file?: string;
   /** Logical run group shared by a dispatcher and any subagent sessions it spawns. */

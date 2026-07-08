@@ -307,6 +307,15 @@ function renderAgentSubnav() {
   }
   const info = computeAgentInfo(STATE.selectedSessionId);
   if (!info) { sessionSubnav.style.display = "none"; return; }
+  const session = STATE.sessions.find(s => s.session_id === STATE.selectedSessionId)
+    || {
+      session_id: info.sid,
+      pool: info.pool,
+      tags: info.tags,
+      agent_name: info.name,
+      provider: info.provider,
+      model: info.model,
+    };
   sessionSubnav.style.display = "flex";
   const tagsHtml = info.tags.length
     ? info.tags.map(t => `<span class="snav-tag">${escapeHtml(t)}</span>`).join("")
@@ -315,7 +324,7 @@ function renderAgentSubnav() {
   const ctxBarColor = ctxPctUsed > 90 ? "var(--red)" : ctxPctUsed > 70 ? "var(--orange)" : "var(--green)";
   sessionSubnav.innerHTML = `
     <div class="snav-group snav-identity">
-      <div class="snav-name" title="${escapeHtml(info.sid)}">${sourceBadgeHTML(s)}${escapeHtml(info.name)}</div>
+      <div class="snav-name" title="${escapeHtml(info.sid)}">${sourceBadgeHTML(session)}${escapeHtml(info.name)}</div>
       <div class="snav-sid"><code>${info.shortSid}</code>${info.model ? `<span class="snav-model">${escapeHtml(info.model)}</span>` : ""}</div>
       <div class="snav-tags"><span class="snav-pool">${escapeHtml(info.pool)}</span>${tagsHtml}</div>
     </div>
@@ -490,11 +499,12 @@ function runBadgeHTML(s) {
 
 async function fetchSessions() {
   try {
-    const url = apiUrl("/sessions", { pool: STATE.pool, tag: STATE.tag, limit: 100 });
+    const url = apiUrl("/sessions", { pool: STATE.pool, tag: STATE.tag, source: STATE.source, limit: 100 });
     const res = await fetch(url, { headers: authHeaders() });
     if (!res.ok) return;
     const data = await res.json();
-    // Apply sort
+    // Source filtering is applied server-side before pagination when supported.
+    // Keep the client predicate as a compatibility guard for older servers.
     let sessions = (data.sessions ?? []).filter(sourceMatchesSession);
     if (STATE.sort === "errors") {
       sessions = sessions.filter(s => (STATE.sessionStats[s.session_id]?.error_count ?? 0) > 0);

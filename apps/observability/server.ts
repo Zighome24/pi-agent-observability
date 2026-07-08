@@ -26,10 +26,9 @@ const DB_PATH = process.env.OBS_DB_PATH ?? DEFAULT_DB_PATH;
 fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 const AUTH_TOKEN = process.env.OBS_AUTH_TOKEN ?? crypto.randomUUID?.() ?? "dev";
 const VERSION = "0.1.0";
-// Browser-openable UI URL with the token baked in. The UI's API + SSE calls are
-// auth-walled, so opening the bare host:port (no ?token=) yields a blank UI.
-// Print this so copy/paste straight from the boot banner just works.
-const OPEN_URL = `http://${HOST}:${PORT}/?token=${encodeURIComponent(AUTH_TOKEN)}`;
+// Browser-openable UI URL. Do not include OBS_AUTH_TOKEN in process output;
+// query-string tokens are convenient but leak through terminal scrollback/logs.
+const OPEN_URL = `http://${HOST}:${PORT}/`;
 
 // ─── Init ───────────────────────────────────────────────────────────────────
 
@@ -38,8 +37,8 @@ const q = prepare(db);
 const startTime = Date.now();
 
 console.log(`\n  pi-observability server v${VERSION}`);
-console.log(`  UI:    ${OPEN_URL}`);
-console.log(`  Token: ${AUTH_TOKEN}`);
+console.log(`  UI:    ${OPEN_URL} (append ?token=<OBS_AUTH_TOKEN> locally; token not printed)`);
+console.log(`  Token: [redacted]`);
 console.log(`  DB:    ${DB_PATH}\n`);
 
 // ─── SSE subscriber registry ────────────────────────────────────────────────
@@ -308,11 +307,12 @@ async function handle(req: Request): Promise<Response> {
   if (pathname === "/sessions" && method === "GET") {
     const pool = url.searchParams.get("pool") ?? "";
     const tag = url.searchParams.get("tag") ?? "";
+    const source = url.searchParams.get("source") ?? "";
     const since = url.searchParams.get("since") ?? "";
     const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "50", 10), 200);
 
     try {
-      const rows = q.listSessions.all({ $pool: pool, $tag: tag, $limit: limit }) as any[];
+      const rows = q.listSessions.all({ $pool: pool, $tag: tag, $source: source, $limit: limit }) as any[];
 
       // Filter by `since` in application code (optional low-frequency filter)
       const sessions = rows
