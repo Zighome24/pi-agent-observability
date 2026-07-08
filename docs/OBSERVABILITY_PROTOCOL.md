@@ -111,6 +111,79 @@ Usage objects, when available, should use:
 
 Use `0` for known-zero values. Omit `usage` only when usage is unknown.
 
+## Usage aggregation and historical-query semantics
+
+Long-term token and cost analytics are computed from stored raw events; any future rollup tables are caches that must be rebuildable from those events. The rules below define how historical queries should interpret existing `payload.usage` objects and avoid double-counting.
+
+### Counting source of truth
+
+- **Default authoritative source:** count usage from `assistant_message.payload.usage`. Each assistant message represents one completed model call and is the unit for token/cost totals, call counts, provider/model breakdowns, and top-N reports.
+- **Do not add `turn_end` usage on top of `assistant_message` usage.** `turn_end.payload.usage` is a compatibility/session-summary rollup and may repeat the same tokens from the assistant message for that turn.
+- **Compatibility fallback:** if a turn has no `assistant_message` with usage, a query may count `turn_end.payload.usage` for that turn. Mark these rows internally as fallback-derived when possible so operators can distinguish old runtimes from normal per-call accounting.
+- **Mixed turn rule:** if a turn/session has both assistant-message usage and turn-end usage for the same `session_id` + `turn_index`, prefer the assistant-message rows and ignore the turn-end usage for aggregation.
+- **Call/event counts:** `call_count` should count assistant-message usage rows plus fallback turn-end rows only. Other event types do not increase usage call counts.
+
+### Token fields
+
+- `input`: prompt/input tokens reported by the provider for the model call. Sum it for prompt-token totals.
+- `output`: completion/output tokens reported by the provider. Sum it for generated-token totals.
+- `cache_read`: cached-context tokens read by the provider. Track and expose separately; do not merge into `input` unless a UI explicitly labels the result as context volume.
+- `cache_write`: tokens written into provider cache. Track and expose separately.
+- `total_tokens`: provider-reported total when available. Historical queries should sum `total_tokens` for a `total_tokens` field, but should not assume every provider defines it identically. If `total_tokens` is missing/null, derive a compatibility total as `input + output` for billable-token-style charts and expose that it is derived when the response shape allows.
+- **Context volume:** for context-pressure views only, compute `context_tokens = input + cache_read + cache_write`. Keep this separate from `total_tokens`, billable totals, and cost.
+
+### Cost fields
+
+- `cost_total` is the provider/emitter's total cost estimate for the model call in the emitter's configured currency (currently treated as USD by the dashboard). Sum it for cost totals.
+- Cache read/write tokens must remain visible as their own dimensions because providers price them differently. Do not infer cache costs from token counts in historical queries unless an explicit pricing table/version is part of that query.
+- Missing `cost_total` means cost is unknown, not free. For numeric sums treat missing/null as `0` and include a `cost_known_count`/`cost_missing_count`-style diagnostic where practical.
+
+### Missing, null, and malformed usage
+
+Historical data may predate optional fields. Query implementations should be forgiving:
+
+- Missing `usage` object: event contributes no usage totals and no call count, except the `turn_end` fallback rule above when it does contain usage.
+- Missing numeric field inside `usage`: treat as `0` for sums of that field, and as unknown for diagnostics.
+- Explicit `null`, non-number, `NaN`, or negative token/cost values: do not add to totals; treat as unknown/malformed and prefer surfacing a malformed count over failing the whole query.
+- Known-zero values should be emitted and stored as `0`; consumers should not confuse `0` with a missing field.
+
+### Idempotency and duplicates
+
+- `event_id` is the global idempotency key. Ingest rejects duplicate `event_id` values, so historical queries over the canonical events table should see only one stored copy.
+- If a query processes exported JSON or another source that may contain duplicates, de-duplicate by `event_id` before aggregation.
+- `(session_id, seq)` is also unique in the server store and should not be reused for a different logical event. If both keys conflict in offline data, prefer the first persisted event and count the conflict as malformed input.
+
+### Session and run grouping
+
+- A `session_id` is one observed agent session. Session-level usage is the sum of authoritative usage rows for that session.
+- A run group is all sessions sharing the same `run:<run-id>` tag. This includes the dispatcher/root session tagged `run_root` and any subagent sessions tagged `run_child`.
+- `session_start.payload.run_id`, `parent_run_id`, and related fields are detail metadata; the structured `run:<id>` tag is the query key for grouping across sessions.
+- If a session has no `run:<id>` tag, treat it as an ungrouped single-session run for top-run views, using `session_id` as the fallback group key and labeling the run id as null/unknown when possible.
+
+### Filter and bucket dimensions
+
+Historical usage endpoints should support filtering and grouping by these dimensions when present in the event envelope/tags:
+
+- Date range over event timestamp `ts` (`from`, `to`) and bucket size (`hour`, `day`, `week`, `month` as supported by the endpoint).
+- `pool`.
+- Exact tag, including `run:<id>`, `repo:<owner/name>`, `runtime:<runtime>`, `platform:<platform>`, `profile:<profile>`, and `source:<source>`.
+- `agent_name`.
+- `provider` and `model`, taken from the usage event envelope unless a payload explicitly overrides it in a future additive schema.
+- `cwd`/repo where available; prefer `repo:<owner/name>` tags for stable cross-machine repository grouping.
+
+### Recommended aggregate response fields
+
+Usage summaries and time buckets should keep billable, cache, and diagnostic values distinct:
+
+```txt
+input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
+total_tokens, context_tokens, cost_total,
+call_count, event_count,
+cost_known_count, cost_missing_count, usage_missing_count, malformed_usage_count
+```
+
+`event_count` may count all matched events for diagnostics, but it is not a model-call count. `call_count` is the count of rows that contributed authoritative or fallback usage.
+
 ## Batching, idempotency, and ordering
 
 `POST /events` accepts either a single envelope or an array of envelopes. The Pi extension batches up to 50 events; other agents should keep request bodies comfortably below `MAX_REQUEST_BYTES` (`4 MiB`) and retry failed batches with the same `event_id` values.
