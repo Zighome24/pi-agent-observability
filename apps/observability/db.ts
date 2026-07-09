@@ -16,6 +16,36 @@ import type {
 
 // ─── Schema ─────────────────────────────────────────────────────────────────
 
+const USAGE_ROLLUPS_DAILY_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS usage_rollups_daily (
+  bucket       TEXT NOT NULL,
+  pool         TEXT NOT NULL DEFAULT 'default',
+  agent_name   TEXT NOT NULL DEFAULT '',
+  provider     TEXT NOT NULL DEFAULT '',
+  model        TEXT NOT NULL DEFAULT '',
+  run_id       TEXT NOT NULL DEFAULT '',
+  repo         TEXT NOT NULL DEFAULT '',
+  session_id   TEXT NOT NULL DEFAULT '',
+  tags_json    TEXT NOT NULL DEFAULT '[]',
+  input_tokens INTEGER NOT NULL DEFAULT 0,
+  output_tokens INTEGER NOT NULL DEFAULT 0,
+  cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+  cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+  total_tokens INTEGER NOT NULL DEFAULT 0,
+  cost_total   REAL NOT NULL DEFAULT 0,
+  call_count   INTEGER NOT NULL DEFAULT 0,
+  event_count  INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (bucket, pool, agent_name, provider, model, run_id, repo, session_id, tags_json)
+);
+`;
+
+const USAGE_ROLLUPS_DAILY_INDEX_SQL = [
+  "CREATE INDEX IF NOT EXISTS idx_usage_rollups_daily_bucket ON usage_rollups_daily(bucket)",
+  "CREATE INDEX IF NOT EXISTS idx_usage_rollups_daily_pool ON usage_rollups_daily(pool)",
+  "CREATE INDEX IF NOT EXISTS idx_usage_rollups_daily_model ON usage_rollups_daily(provider, model)",
+  "CREATE INDEX IF NOT EXISTS idx_usage_rollups_daily_run ON usage_rollups_daily(run_id)",
+];
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS sessions (
   session_id   TEXT PRIMARY KEY,
@@ -50,30 +80,8 @@ CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts);
 CREATE INDEX IF NOT EXISTS idx_events_pool ON events(pool);
 CREATE INDEX IF NOT EXISTS idx_events_type ON events(type);
 
-CREATE TABLE IF NOT EXISTS usage_rollups_daily (
-  bucket       TEXT NOT NULL,
-  pool         TEXT NOT NULL DEFAULT 'default',
-  agent_name   TEXT NOT NULL DEFAULT '',
-  provider     TEXT NOT NULL DEFAULT '',
-  model        TEXT NOT NULL DEFAULT '',
-  run_id       TEXT NOT NULL DEFAULT '',
-  repo         TEXT NOT NULL DEFAULT '',
-  session_id   TEXT NOT NULL DEFAULT '',
-  tags_json    TEXT NOT NULL DEFAULT '[]',
-  input_tokens INTEGER NOT NULL DEFAULT 0,
-  output_tokens INTEGER NOT NULL DEFAULT 0,
-  cache_read_tokens INTEGER NOT NULL DEFAULT 0,
-  cache_write_tokens INTEGER NOT NULL DEFAULT 0,
-  total_tokens INTEGER NOT NULL DEFAULT 0,
-  cost_total   REAL NOT NULL DEFAULT 0,
-  call_count   INTEGER NOT NULL DEFAULT 0,
-  event_count  INTEGER NOT NULL DEFAULT 0,
-  PRIMARY KEY (bucket, pool, agent_name, provider, model, run_id, repo, session_id, tags_json)
-);
-CREATE INDEX IF NOT EXISTS idx_usage_rollups_daily_bucket ON usage_rollups_daily(bucket);
-CREATE INDEX IF NOT EXISTS idx_usage_rollups_daily_pool ON usage_rollups_daily(pool);
-CREATE INDEX IF NOT EXISTS idx_usage_rollups_daily_model ON usage_rollups_daily(provider, model);
-CREATE INDEX IF NOT EXISTS idx_usage_rollups_daily_run ON usage_rollups_daily(run_id);
+${USAGE_ROLLUPS_DAILY_TABLE_SQL}
+${USAGE_ROLLUPS_DAILY_INDEX_SQL.join(";\n")};
 
 CREATE TABLE IF NOT EXISTS usage_rollup_meta (
   key        TEXT PRIMARY KEY,
@@ -104,11 +112,41 @@ export function createDb(path: string): Database {
   db.run("PRAGMA journal_mode = WAL");
   db.run("PRAGMA busy_timeout = 5000");
   db.run(SCHEMA);
-  const rollupColumns = db.query("PRAGMA table_info(usage_rollups_daily)").all() as Array<{ name: string }>;
-  if (!rollupColumns.some((column) => column.name === "session_id")) {
-    db.run("ALTER TABLE usage_rollups_daily ADD COLUMN session_id TEXT NOT NULL DEFAULT ''");
-  }
+  migrateUsageRollupsDailySchema(db);
   return db;
+}
+
+function migrateUsageRollupsDailySchema(db: Database): void {
+  const rollupColumns = db.query("PRAGMA table_info(usage_rollups_daily)").all() as Array<{ name: string; pk: number }>;
+  const sessionColumn = rollupColumns.find((column) => column.name === "session_id");
+  if (sessionColumn?.pk) return;
+
+  const sessionSelect = sessionColumn ? "COALESCE(session_id, '')" : "''";
+  const sessionGroup = sessionColumn ? "session_id" : "''";
+
+  db.transaction(() => {
+    db.run("ALTER TABLE usage_rollups_daily RENAME TO usage_rollups_daily_old");
+    for (const indexSql of USAGE_ROLLUPS_DAILY_INDEX_SQL) {
+      const indexName = indexSql.match(/idx_usage_rollups_daily_[a-z_]+/)?.[0];
+      if (indexName) db.run(`DROP INDEX IF EXISTS ${indexName}`);
+    }
+    db.run(USAGE_ROLLUPS_DAILY_TABLE_SQL);
+    db.run(`
+      INSERT INTO usage_rollups_daily
+        (bucket, pool, agent_name, provider, model, run_id, repo, session_id, tags_json,
+         input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, total_tokens, cost_total, call_count, event_count)
+      SELECT
+        bucket, pool, agent_name, provider, model, run_id, repo,
+        ${sessionSelect} AS session_id,
+        tags_json,
+        SUM(input_tokens), SUM(output_tokens), SUM(cache_read_tokens), SUM(cache_write_tokens),
+        SUM(total_tokens), SUM(cost_total), SUM(call_count), SUM(event_count)
+      FROM usage_rollups_daily_old
+      GROUP BY bucket, pool, agent_name, provider, model, run_id, repo, ${sessionGroup}, tags_json
+    `);
+    db.run("DROP TABLE usage_rollups_daily_old");
+    for (const indexSql of USAGE_ROLLUPS_DAILY_INDEX_SQL) db.run(indexSql);
+  })();
 }
 
 export function prepare(db: Database): PreparedQueries {
@@ -426,6 +464,24 @@ function hasCompleteUsageRollups(db: Database): boolean {
   return row?.value === "true";
 }
 
+function isFullDayAlignedRange(filters: UsageFilters): boolean {
+  return isStartOfDay(filters.from) && isEndOfDay(filters.to);
+}
+
+function isStartOfDay(value?: string): boolean {
+  if (!value) return true;
+  return /^\d{4}-\d{2}-\d{2}T00:00:00(?:\.000)?Z$/.test(value);
+}
+
+function isEndOfDay(value?: string): boolean {
+  if (!value) return true;
+  return /^\d{4}-\d{2}-\d{2}T23:59:59(?:\.999)?Z$/.test(value);
+}
+
+function shouldUseUsageRollups(db: Database, filters: UsageFilters): boolean {
+  return hasCompleteUsageRollups(db) && isFullDayAlignedRange(filters);
+}
+
 const ROLLUP_SOURCE_SQL = `
   FROM usage_rollups_daily r
   WHERE ($from = '' OR r.bucket >= substr($from, 1, 10))
@@ -493,7 +549,7 @@ export function rebuildUsageRollups(db: Database): { rows: number; source_events
 }
 
 export function getUsageSummary(db: Database, filters: UsageFilters): UsageSummaryResponse {
-  if (hasCompleteUsageRollups(db)) {
+  if (shouldUseUsageRollups(db, filters)) {
     const row = db.query(`SELECT ${ROLLUP_TOTALS_SQL} ${ROLLUP_SOURCE_SQL}`).get(usageParams(filters)) as any;
     return { totals: totals(row), source: "rollups" };
   }
@@ -502,7 +558,7 @@ export function getUsageSummary(db: Database, filters: UsageFilters): UsageSumma
 }
 
 export function getUsageTimeseries(db: Database, options: UsageTimeseriesOptions): UsageTimeseriesResponse {
-  const useRollups = hasCompleteUsageRollups(db);
+  const useRollups = shouldUseUsageRollups(db, options);
   const bucketExpr = useRollups
     ? (options.bucket === "month" ? "substr(r.bucket, 1, 7)" : options.bucket === "week" ? "strftime('%Y-W%W', r.bucket)" : "r.bucket")
     : (options.bucket === "month"
@@ -540,7 +596,7 @@ export function getUsageTimeseries(db: Database, options: UsageTimeseriesOptions
 }
 
 function getUsageTop(db: Database, filters: UsageTopOptions, dimension: "run" | "agent"): UsageTopResponse {
-  const useRollups = hasCompleteUsageRollups(db);
+  const useRollups = shouldUseUsageRollups(db, filters);
   const groupExpr = useRollups
     ? (dimension === "run" ? "COALESCE(NULLIF(r.run_id, ''), r.session_id)" : "COALESCE(NULLIF(r.agent_name, ''), 'unknown')")
     : (dimension === "run" ? `COALESCE(${tagValueExpr("run:")}, e.session_id)` : "COALESCE(s.agent_name, 'unknown')");

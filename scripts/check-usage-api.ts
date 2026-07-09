@@ -2,6 +2,8 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Database } from "bun:sqlite";
+import { createDb } from "../apps/observability/db.js";
 
 const token = "usage-test-token";
 const port = 43291 + Math.floor(Math.random() * 1000);
@@ -101,6 +103,11 @@ try {
   assertEqual((await getJson("/usage/summary?model=m2")).totals.total_tokens, 300, "model filter");
   assertEqual((await getJson("/usage/summary?agent_name=child")).totals.total_tokens, 300, "agent filter");
   assertEqual((await getJson("/usage/summary?from=2026-01-02T00:00:00.000Z")).totals.total_tokens, 30, "from filter");
+  const rawPartialFrom = await getJson("/usage/summary?from=2026-01-01T00:30:00.000Z");
+  assertEqual(rawPartialFrom.source, "raw", "partial from initially uses raw");
+  assertEqual(rawPartialFrom.totals.total_tokens, 30, "partial from raw timestamp precision");
+  const rawPartialTo = await getJson("/usage/summary?to=2026-01-02T00:30:00.000Z");
+  assertEqual(rawPartialTo.totals.total_tokens, 475, "partial to raw timestamp precision");
 
   const runs = await getJson("/usage/top-runs?sort=tokens&limit=1");
   assertEqual(runs.items[0].id, "r1", "top-runs groups run tag");
@@ -118,6 +125,15 @@ try {
   assertEqual(rollupSummary.source, "rollups", "usage reads rollups after backfill");
   assertEqual(rollupSummary.totals.total_tokens, summary.totals.total_tokens, "rollup summary matches raw total tokens");
   assertClose(rollupSummary.totals.cost_total, summary.totals.cost_total, "rollup summary matches raw cost");
+  const rollupFullDay = await getJson("/usage/summary?from=2026-01-02T00:00:00.000Z&to=2026-01-02T23:59:59.999Z");
+  assertEqual(rollupFullDay.source, "rollups", "full-day-aligned range can use rollups");
+  assertEqual(rollupFullDay.totals.total_tokens, 30, "full-day rollup range matches raw semantics");
+  const fallbackPartialFrom = await getJson("/usage/summary?from=2026-01-01T00:30:00.000Z");
+  assertEqual(fallbackPartialFrom.source, "raw", "partial from falls back to raw after backfill");
+  assertEqual(fallbackPartialFrom.totals.total_tokens, rawPartialFrom.totals.total_tokens, "partial from raw/rollup parity");
+  const fallbackPartialTo = await getJson("/usage/summary?to=2026-01-02T00:30:00.000Z");
+  assertEqual(fallbackPartialTo.source, "raw", "partial to falls back to raw after backfill");
+  assertEqual(fallbackPartialTo.totals.total_tokens, rawPartialTo.totals.total_tokens, "partial to raw/rollup parity");
 
   const backfill2 = Bun.spawnSync(["bun", "scripts/backfill-usage-rollups.ts"], {
     cwd: join(import.meta.dir, ".."),
@@ -148,6 +164,30 @@ try {
   assertEqual(series.points[0].bucket, "2026-01-01", "timeseries day bucket");
   assertEqual(series.points[0].group, "alpha", "timeseries group");
   assertEqual(series.points[0].total_tokens, 460, "timeseries total");
+
+  const oldDbPath = join(dir, "old-rollup.db");
+  const oldDb = new Database(oldDbPath);
+  oldDb.run(`
+    CREATE TABLE usage_rollups_daily (
+      bucket TEXT NOT NULL, pool TEXT NOT NULL DEFAULT 'default', agent_name TEXT NOT NULL DEFAULT '',
+      provider TEXT NOT NULL DEFAULT '', model TEXT NOT NULL DEFAULT '', run_id TEXT NOT NULL DEFAULT '',
+      repo TEXT NOT NULL DEFAULT '', tags_json TEXT NOT NULL DEFAULT '[]', input_tokens INTEGER NOT NULL DEFAULT 0,
+      output_tokens INTEGER NOT NULL DEFAULT 0, cache_read_tokens INTEGER NOT NULL DEFAULT 0, cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+      total_tokens INTEGER NOT NULL DEFAULT 0, cost_total REAL NOT NULL DEFAULT 0, call_count INTEGER NOT NULL DEFAULT 0,
+      event_count INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (bucket, pool, agent_name, provider, model, run_id, repo, tags_json)
+    )
+  `);
+  oldDb.run("INSERT INTO usage_rollups_daily (bucket, pool, total_tokens, call_count, event_count) VALUES ('2026-01-01', 'alpha', 10, 1, 1)");
+  oldDb.close();
+  const migrated = createDb(oldDbPath);
+  const pk = migrated.query("PRAGMA table_info(usage_rollups_daily)").all() as Array<{ name: string; pk: number }>;
+  assertEqual(pk.some((column) => column.name === "session_id" && column.pk > 0), true, "migration adds session_id to rollup primary key");
+  migrated.query(`
+    INSERT INTO usage_rollups_daily (bucket, pool, agent_name, provider, model, run_id, repo, session_id, tags_json, total_tokens, call_count, event_count)
+    VALUES ('2026-01-01', 'alpha', '', '', '', '', '', 's1', '[]', 5, 1, 1)
+    ON CONFLICT(bucket, pool, agent_name, provider, model, run_id, repo, session_id, tags_json) DO UPDATE SET total_tokens = usage_rollups_daily.total_tokens + excluded.total_tokens
+  `).run();
+  migrated.close();
 
   console.log("usage API smoke passed");
 } finally {
