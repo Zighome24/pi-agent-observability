@@ -27,7 +27,7 @@ tmux new-session -d -s "$SESSION" "$CMD"
 for _ in $(seq 1 50); do
   if curl -fsS "http://${OBS_HOST}:${OBS_PORT}/health" >/dev/null 2>&1; then
     echo "pi-agent-observability started in tmux session: $SESSION"
-    echo "UI: http://${OBS_HOST}:${OBS_PORT}/?token=${OBS_AUTH_TOKEN}"
+    echo "UI: http://${OBS_HOST}:${OBS_PORT}/ (append ?token=<OBS_AUTH_TOKEN> locally; token not printed)"
     echo "Health: http://${OBS_HOST}:${OBS_PORT}/health"
     exit 0
   fi

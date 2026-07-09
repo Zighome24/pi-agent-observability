@@ -32,6 +32,7 @@ import {
 // ━━ Module-scope state ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 let seqCounter = 0;
 
+
 // ━━ Helper functions ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function loadEnv(cwd: string) {
@@ -463,6 +464,7 @@ export default function (pi: ExtensionAPI) {
   // turnIndex → ts of first text/thinking delta (per-turn TTFT marker).
   // Cleared alongside turnStartTimes at message_end.
   const firstTokenTimes = new Map<number, number>();
+  let propagatedRunContext: { runId: string; runName: string; sessionId: string } | null = null;
 
   function logObs(message: string, extra?: any) {
     try {
@@ -482,6 +484,7 @@ export default function (pi: ExtensionAPI) {
     const token = (pi.getFlag("obs-token") as string) || process.env.OBS_AUTH_TOKEN || "";
     const pool = (pi.getFlag("o-pool") as string) || process.env.OBS_POOL || "default";
     const name = (pi.getFlag("o-name") as string) || process.env.OBS_NAME || undefined;
+    const source = tagValue(firstString(pi.getFlag("o-source"), process.env.OBS_SOURCE) || "pi").toLowerCase();
 
     // Parse tags
     const rawTag = pi.getFlag("o-tag");
@@ -498,16 +501,31 @@ export default function (pi: ExtensionAPI) {
     tags = normalizeTags(tags);
 
     const sessionId = ctx.sessionManager.getSessionId();
-    const parentRunId = firstString(process.env.OBS_PARENT_RUN_ID);
-    const parentRunName = firstString(process.env.OBS_PARENT_RUN_NAME);
-    const parentSessionId = firstString(process.env.OBS_PARENT_SESSION_ID);
-    const requestedRunId = firstString(pi.getFlag("o-run-id"), process.env.OBS_RUN_ID);
+    const envParentRunId = firstString(process.env.OBS_PARENT_RUN_ID);
+    const envParentRunName = firstString(process.env.OBS_PARENT_RUN_NAME);
+    const envParentSessionId = firstString(process.env.OBS_PARENT_SESSION_ID);
+    const envRunId = firstString(process.env.OBS_RUN_ID);
+    const explicitRunFlag = firstString(pi.getFlag("o-run-id"));
+    const selfPropagatedParent = Boolean(
+      propagatedRunContext
+      && envParentRunId === propagatedRunContext.runId
+      && envParentSessionId === propagatedRunContext.sessionId
+    );
+    const parentRunId = selfPropagatedParent ? undefined : envParentRunId;
+    const parentRunName = selfPropagatedParent ? undefined : envParentRunName;
+    const parentSessionId = selfPropagatedParent ? undefined : envParentSessionId;
+    const requestedRunId = firstString(
+      explicitRunFlag,
+      propagatedRunContext && envRunId === propagatedRunContext.runId ? undefined : envRunId,
+    );
+
     const runId = tagValue(requestedRunId || parentRunId || name || sessionId);
     const runName = firstString(parentRunName, name, runId) || runId;
 
     // Add stable run tags to every session in this process. If this process was
     // launched by another observed Pi process, parent tags let the dashboard
     // filter/group dispatcher + subagents together with tag=run:<id>.
+    tags = appendTag(tags, `source:${source}`);
     tags = appendTag(tags, `run:${runId}`);
     tags = appendTag(tags, parentRunId ? "run_child" : "run_root");
     if (parentRunId) {
@@ -516,15 +534,22 @@ export default function (pi: ExtensionAPI) {
       tags = appendTag(tags, parentSessionId ? `parent_session:${tagValue(parentSessionId)}` : undefined);
     }
 
-    // Propagate the root run context to child processes launched by this agent
-    // (for example agent-team/scout and agent-team/pr-builder). Pi tool
-    // subprocesses inherit process.env, so child Pi extension instances can
-    // emit the same run:<id> tag without every launcher script remembering to
-    // pass flags manually. Preserve an existing parent context for grandchildren.
+    // Propagate the effective root run context to child processes launched by
+    // this agent. Track the values we write so a later root session in the same
+    // long-lived process does not mistake our previous mutation for inherited
+    // parent context. Preserve a real inherited parent context for grandchildren.
+    const childParentRunId = parentRunId || runId;
+    const childParentRunName = parentRunName || runName;
+    const childParentSessionId = parentSessionId || sessionId;
     process.env.OBS_RUN_ID = runId;
-    process.env.OBS_PARENT_RUN_ID ||= runId;
-    process.env.OBS_PARENT_RUN_NAME ||= runName;
-    process.env.OBS_PARENT_SESSION_ID ||= sessionId;
+    process.env.OBS_PARENT_RUN_ID = childParentRunId;
+    process.env.OBS_PARENT_RUN_NAME = childParentRunName;
+    process.env.OBS_PARENT_SESSION_ID = childParentSessionId;
+    propagatedRunContext = {
+      runId: childParentRunId,
+      runName: childParentRunName,
+      sessionId: childParentSessionId,
+    };
 
     // 3. Reset seq counter + boot-snapshot gate
     seqCounter = 0;

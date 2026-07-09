@@ -23,7 +23,7 @@ OBS_AUTH_TOKEN=my-secret-token bun run start
 | `OBS_PORT` | `43190` | HTTP port |
 | `OBS_HOST` | `127.0.0.1` | Bind address |
 | `OBS_DB_PATH` | `db/obs.db` | SQLite database path |
-| `OBS_AUTH_TOKEN` | auto-generated | Bearer token for auth |
+| `OBS_AUTH_TOKEN` | required | Bearer token for auth |
 
 ## Smoke test
 

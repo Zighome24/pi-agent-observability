@@ -61,7 +61,7 @@ export interface ObsEventEnvelope<P = unknown> {
 // ─── Payloads ───────────────────────────────────────────────────────────────
 
 export interface SessionStartPayload {
-  reason: "startup" | "reload" | "new" | "resume" | "fork";
+  reason: "startup" | "reload" | "new" | "resume" | "fork" | (string & {});
   pi_version?: string;
   previous_session_file?: string;
   /** Logical run group shared by a dispatcher and any subagent sessions it spawns. */
@@ -187,7 +187,7 @@ export interface AssistantMessagePayload {
   thinking: string;
   tool_call_ids: string[];
   stop_reason: "stop" | "length" | "toolUse" | "error" | "aborted" | string;
-  usage: UsageSummary;
+  usage?: UsageSummary;
   error_message?: string;
   /** turn_start → message_end (wall-clock). Includes prefill + generation. */
   latency_ms?: number;
@@ -256,12 +256,12 @@ export interface BranchNavPayload {
 }
 
 export interface UsageSummary {
-  input: number;
-  output: number;
-  cache_read: number;
-  cache_write: number;
-  total_tokens: number;
-  cost_total: number;
+  input?: number | null;
+  output?: number | null;
+  cache_read?: number | null;
+  cache_write?: number | null;
+  total_tokens?: number | null;
+  cost_total?: number | null;
 }
 
 // ─── Discriminated union ────────────────────────────────────────────────────

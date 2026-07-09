@@ -117,7 +117,7 @@ For v1, the server may also accept `?token=` for the SSE endpoint (browsers can'
 
 ### Auth
 
-- Server reads `OBS_AUTH_TOKEN` from env (or `--token` flag). If unset, generates a random token at boot and prints it.
+- Server reads `OBS_AUTH_TOKEN` from env (or `--token` flag). It is required; startup fails fast when unset to avoid an authenticated server with an undiscoverable token.
 - Server prints its full URL + token at boot for easy copy/paste.
 
 ## CLI flags (extension)
