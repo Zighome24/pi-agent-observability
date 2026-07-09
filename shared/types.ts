@@ -318,6 +318,44 @@ export interface HealthResponse {
   sessions_total: number;
 }
 
+export interface UsageTotals {
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+  total_tokens: number;
+  cost_total: number;
+  /** Counted assistant_message usage rows. Same as event_count for the MVP source. */
+  call_count: number;
+  /** Counted assistant_message usage events. */
+  event_count: number;
+}
+
+export interface UsageSummaryResponse {
+  totals: UsageTotals;
+}
+
+export interface UsageTimeseriesPoint extends UsageTotals {
+  bucket: string;
+  group?: string;
+}
+
+export interface UsageTimeseriesResponse {
+  bucket: "day" | "week" | "month";
+  group_by?: "pool" | "model" | "agent" | "run" | "repo";
+  points: UsageTimeseriesPoint[];
+}
+
+export interface UsageTopItem extends UsageTotals {
+  id: string;
+}
+
+export interface UsageTopResponse {
+  dimension: "run" | "agent";
+  sort: "cost" | "tokens";
+  items: UsageTopItem[];
+}
+
 // ─── Limits ─────────────────────────────────────────────────────────────────
 
 /** Strings longer than this are truncated by the extension before sending. */

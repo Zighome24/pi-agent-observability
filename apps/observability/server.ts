@@ -8,7 +8,18 @@
 import { Database } from "bun:sqlite";
 import * as path from "node:path";
 import * as fs from "node:fs";
-import { createDb, prepare, toRow, toSessionRow, rowToSession, rowToEvent } from "./db.js";
+import {
+  createDb,
+  prepare,
+  toRow,
+  toSessionRow,
+  rowToSession,
+  rowToEvent,
+  getUsageSummary,
+  getUsageTimeseries,
+  getUsageTopRuns,
+  getUsageTopAgents,
+} from "./db.js";
 import { MAX_REQUEST_BYTES } from "../../shared/types.js";
 import type { ObsEvent } from "../../shared/types.js";
 
@@ -122,6 +133,33 @@ function textResponse(body: string, status: number, contentType: string): Respon
 
 function readTokenFromQuery(url: URL): string | null {
   return url.searchParams.get("token");
+}
+
+function readUsageFilters(url: URL) {
+  return {
+    from: url.searchParams.get("from") ?? undefined,
+    to: url.searchParams.get("to") ?? undefined,
+    pool: url.searchParams.get("pool") ?? undefined,
+    tag: url.searchParams.get("tag") ?? undefined,
+    agent_name: url.searchParams.get("agent_name") ?? undefined,
+    provider: url.searchParams.get("provider") ?? undefined,
+    model: url.searchParams.get("model") ?? undefined,
+  };
+}
+
+function readUsageLimit(url: URL): number | null {
+  const rawParam = url.searchParams.get("limit");
+  if (rawParam === null) return 10;
+  if (!/^\d+$/.test(rawParam)) return null;
+  const raw = parseInt(rawParam, 10);
+  if (!Number.isFinite(raw) || raw < 1) return null;
+  return Math.min(raw, 100);
+}
+
+function readUsageSort(url: URL): "cost" | "tokens" | null {
+  const raw = url.searchParams.get("sort") ?? "cost";
+  if (raw !== "cost" && raw !== "tokens") return null;
+  return raw;
 }
 
 function checkAuth(req: Request): boolean {
@@ -305,6 +343,67 @@ async function handle(req: Request): Promise<Response> {
     }
 
     return jsonResponse({ ingested: ingested.length, rejected });
+  }
+
+  // ── GET /usage/* ───────────────────────────────────────────────────────
+  if (pathname === "/usage/summary" && method === "GET") {
+    try {
+      return jsonResponse(getUsageSummary(db, readUsageFilters(url)));
+    } catch (err: any) {
+      return jsonResponse({ error: err.message }, 500);
+    }
+  }
+
+  if (pathname === "/usage/timeseries" && method === "GET") {
+    const bucketParam = url.searchParams.get("bucket") ?? "day";
+    const groupParam = url.searchParams.get("group_by") ?? undefined;
+    if (!["day", "week", "month"].includes(bucketParam)) {
+      return jsonResponse({ error: "bucket must be day, week, or month" }, 400);
+    }
+    if (groupParam && !["pool", "model", "agent", "run", "repo"].includes(groupParam)) {
+      return jsonResponse({ error: "group_by must be pool, model, agent, run, or repo" }, 400);
+    }
+    try {
+      return jsonResponse(getUsageTimeseries(db, {
+        ...readUsageFilters(url),
+        bucket: bucketParam as "day" | "week" | "month",
+        group_by: groupParam as any,
+      }));
+    } catch (err: any) {
+      return jsonResponse({ error: err.message }, 500);
+    }
+  }
+
+  if (pathname === "/usage/top-runs" && method === "GET") {
+    const limit = readUsageLimit(url);
+    const sort = readUsageSort(url);
+    if (limit === null) return jsonResponse({ error: "limit must be a positive integer" }, 400);
+    if (sort === null) return jsonResponse({ error: "sort must be cost or tokens" }, 400);
+    try {
+      return jsonResponse(getUsageTopRuns(db, {
+        ...readUsageFilters(url),
+        limit,
+        sort,
+      }));
+    } catch (err: any) {
+      return jsonResponse({ error: err.message }, 500);
+    }
+  }
+
+  if (pathname === "/usage/top-agents" && method === "GET") {
+    const limit = readUsageLimit(url);
+    const sort = readUsageSort(url);
+    if (limit === null) return jsonResponse({ error: "limit must be a positive integer" }, 400);
+    if (sort === null) return jsonResponse({ error: "sort must be cost or tokens" }, 400);
+    try {
+      return jsonResponse(getUsageTopAgents(db, {
+        ...readUsageFilters(url),
+        limit,
+        sort,
+      }));
+    } catch (err: any) {
+      return jsonResponse({ error: err.message }, 500);
+    }
   }
 
   // ── GET /sessions ──────────────────────────────────────────────────────
