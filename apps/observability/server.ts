@@ -24,7 +24,11 @@ const DB_PATH = process.env.OBS_DB_PATH ?? DEFAULT_DB_PATH;
 
 // Ensure parent folder exists (e.g. "db/" directory) before initializing SQLite
 fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
-const AUTH_TOKEN = process.env.OBS_AUTH_TOKEN ?? crypto.randomUUID?.() ?? "dev";
+const AUTH_TOKEN = process.env.OBS_AUTH_TOKEN;
+if (!AUTH_TOKEN) {
+  console.error("OBS_AUTH_TOKEN is required. Generate one with: openssl rand -hex 24");
+  process.exit(1);
+}
 const VERSION = "0.1.0";
 // Browser-openable UI URL. Do not include OBS_AUTH_TOKEN in process output;
 // query-string tokens are convenient but leak through terminal scrollback/logs.
@@ -307,8 +311,8 @@ async function handle(req: Request): Promise<Response> {
   if (pathname === "/sessions" && method === "GET") {
     const pool = url.searchParams.get("pool") ?? "";
     const tag = url.searchParams.get("tag") ?? "";
-    const source = url.searchParams.get("source") ?? "";
     const since = url.searchParams.get("since") ?? "";
+    const source = (url.searchParams.get("source") ?? "").trim().toLowerCase();
     const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "50", 10), 200);
 
     try {

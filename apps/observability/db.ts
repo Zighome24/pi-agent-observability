@@ -53,6 +53,7 @@ export interface PreparedQueries {
   upsertSessionNoBump: ReturnType<Database["query"]>;
   listSessions: ReturnType<Database["query"]>;
   getSessionEvents: ReturnType<Database["query"]>;
+  getSessionContext: ReturnType<Database["query"]>;
   getSessionEventsSince: ReturnType<Database["query"]>;
   getSessionStats: ReturnType<Database["query"]>;
   countTotals: ReturnType<Database["query"]>;
@@ -147,29 +148,10 @@ export function prepare(db: Database): PreparedQueries {
       AND ($tag = '' OR EXISTS (
         SELECT 1 FROM json_each(tags_json) WHERE value = $tag
       ))
-      AND (
-        COALESCE($source, '') = ''
-        OR (
-          COALESCE($source, '') = 'hermes' AND (
-            lower(pool) LIKE '%hermes%'
-            OR lower(COALESCE(agent_name, '')) LIKE '%hermes%'
-            OR EXISTS (
-              SELECT 1 FROM json_each(tags_json)
-              WHERE lower(CAST(value AS TEXT)) LIKE '%hermes%'
-            )
-          )
-        )
-        OR (
-          COALESCE($source, '') = 'pi' AND NOT (
-            lower(pool) LIKE '%hermes%'
-            OR lower(COALESCE(agent_name, '')) LIKE '%hermes%'
-            OR EXISTS (
-              SELECT 1 FROM json_each(tags_json)
-              WHERE lower(CAST(value AS TEXT)) LIKE '%hermes%'
-            )
-          )
-        )
-      )
+      AND (COALESCE($source, '') = '' OR EXISTS (
+        SELECT 1 FROM json_each(tags_json) WHERE value = ('source:' || $source)
+      ))
+
     ORDER BY last_ts DESC
     LIMIT $limit
   `);

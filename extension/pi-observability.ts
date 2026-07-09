@@ -32,6 +32,7 @@ import {
 // ━━ Module-scope state ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 let seqCounter = 0;
 
+
 // ━━ Helper functions ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function loadEnv(cwd: string) {
@@ -483,6 +484,7 @@ export default function (pi: ExtensionAPI) {
     const token = (pi.getFlag("obs-token") as string) || process.env.OBS_AUTH_TOKEN || "";
     const pool = (pi.getFlag("o-pool") as string) || process.env.OBS_POOL || "default";
     const name = (pi.getFlag("o-name") as string) || process.env.OBS_NAME || undefined;
+    const source = tagValue(firstString(pi.getFlag("o-source"), process.env.OBS_SOURCE) || "pi").toLowerCase();
 
     // Parse tags
     const rawTag = pi.getFlag("o-tag");
@@ -516,12 +518,14 @@ export default function (pi: ExtensionAPI) {
       explicitRunFlag,
       propagatedRunContext && envRunId === propagatedRunContext.runId ? undefined : envRunId,
     );
+
     const runId = tagValue(requestedRunId || parentRunId || name || sessionId);
     const runName = firstString(parentRunName, name, runId) || runId;
 
     // Add stable run tags to every session in this process. If this process was
     // launched by another observed Pi process, parent tags let the dashboard
     // filter/group dispatcher + subagents together with tag=run:<id>.
+    tags = appendTag(tags, `source:${source}`);
     tags = appendTag(tags, `run:${runId}`);
     tags = appendTag(tags, parentRunId ? "run_child" : "run_root");
     if (parentRunId) {

@@ -428,49 +428,30 @@ window.setView = function(mode) {
 
 // ─── Session source helpers ───────────────────────────────────────────────
 
-function isHermesLike(value) {
-  return String(value ?? "").toLowerCase().includes("hermes");
-}
-
-function isHermesSession(s) {
-  if (!s) return false;
-  return isHermesLike(s.source)
-    || isHermesLike(s.pool)
-    || (Array.isArray(s.tags) && s.tags.some(isHermesLike))
-    || isHermesLike(s.agent_name);
-}
-
-function isHermesEvent(evt) {
-  if (!evt) return false;
-  return isHermesLike(evt.source)
-    || isHermesLike(evt.pool)
-    || (Array.isArray(evt.tags) && evt.tags.some(isHermesLike))
-    || isHermesLike(evt.agent_name);
+function explicitSourceFor(item) {
+  const direct = String(item?.source ?? "").trim().toLowerCase();
+  if (direct) return direct;
+  const tags = Array.isArray(item?.tags) ? item.tags : [];
+  const sourceTag = tags.find(t => typeof t === "string" && t.toLowerCase().startsWith("source:"));
+  return sourceTag ? sourceTag.slice("source:".length).trim().toLowerCase() : "";
 }
 
 function sourceForSession(s) {
-  if (!s) return "";
-  return isHermesSession(s) ? "hermes" : "pi";
+  return explicitSourceFor(s);
 }
 
 function sourceMatchesSession(s) {
-  if (!STATE.source) return true;
-  if (STATE.source === "hermes") return isHermesSession(s);
-  if (STATE.source === "pi") return !isHermesSession(s);
-  return true;
+  return !STATE.source || explicitSourceFor(s) === STATE.source;
 }
 
 function sourceMatchesEvent(evt) {
-  if (!STATE.source) return true;
-  if (STATE.source === "hermes") return isHermesEvent(evt);
-  if (STATE.source === "pi") return !isHermesEvent(evt);
-  return true;
+  return !STATE.source || explicitSourceFor(evt) === STATE.source;
 }
 
 function sourceBadgeHTML(s) {
   const source = sourceForSession(s);
   if (!source) return "";
-  return `<span class="source-badge ${source}" title="source: ${source} (derived from pool/tags/source)">${source}</span>`;
+  return `<span class="source-badge ${escapeHtml(source)}" title="source: ${escapeHtml(source)} (from exact source:<source> tag)">${escapeHtml(source)}</span>`;
 }
 
 function runTagForSession(s) {
@@ -1222,7 +1203,7 @@ Object.assign(window.OBS, {
   getState: () => STATE, summaryFor, summaryClass, renderDetailHTML,
   fmtTs, trunc, shortId, fetchSessionEvents, renderSessions, apiUrl, authHeaders,
   fmtRel, fmtTokens, escapeHtml, toolNamePillHTML, saveURLState, updateBreadcrumb,
-  getContextWindow, computeAgentInfo, fmtDuration, sourceBadgeHTML, isHermesSession,
+  getContextWindow, computeAgentInfo, fmtDuration, sourceBadgeHTML, sourceForSession,
 });
 
 // ─── Boot ───────────────────────────────────────────────────────────────────

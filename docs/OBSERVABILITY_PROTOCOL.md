@@ -15,7 +15,7 @@ The server stores the event envelope plus `payload` as JSON. Payload columns are
 
 ## Authentication
 
-All routes except `/health`, `/`, `/index.html`, and static assets require the token configured as `OBS_AUTH_TOKEN`.
+All routes except `/health`, `/`, `/index.html`, and static assets require the token configured as `OBS_AUTH_TOKEN`. Server startup fails fast when `OBS_AUTH_TOKEN` is unset. Session source filtering uses exact `source:<source>` tags (for example `source:pi` or `source:hermes`), not pool/name substring heuristics.
 
 Clients may authenticate with either:
 
