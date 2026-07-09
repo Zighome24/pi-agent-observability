@@ -204,10 +204,9 @@ backup:
     exit 1
   fi
   ts=$(date +"%Y%m%d_%H%M%S")
-  if command -v sqlite3 >/dev/null 2>&1; then
-    sqlite3 db/obs.db ".backup 'backups/obs_backup_${ts}.db'"
-    echo "✓ Safe database backup created: backups/obs_backup_${ts}.db"
-  else
-    cp db/obs.db "backups/obs_backup_${ts}.db"
-    echo "✓ Database backup created via file copy: backups/obs_backup_${ts}.db"
+  if ! command -v sqlite3 >/dev/null 2>&1; then
+    echo "✗ sqlite3 CLI is required for WAL-safe live backups. Install sqlite3 or stop the service before manually copying db/obs.db with its WAL sidecars." >&2
+    exit 1
   fi
+  sqlite3 db/obs.db ".backup 'backups/obs_backup_${ts}.db'"
+  echo "✓ Safe database backup created: backups/obs_backup_${ts}.db"

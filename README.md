@@ -162,7 +162,7 @@ compaction     branch_nav        error        custom
 
 ### Usage analytics
 
-The usage API reads historical events from SQLite and treats `assistant_message.payload.usage` as the normal source of truth for one model call. `turn_end.payload.usage` can be used as a compatibility fallback for older runtimes, but it is not added on top of assistant-message usage because that would double-count a turn.
+The usage API reads historical events from SQLite and currently counts `assistant_message.payload.usage` as the source of truth for one model call. `turn_end.payload.usage` is part of the shared/schema-level compatibility contract for older runtimes, but `/usage/*` endpoints do not count it yet; emitters that need usage totals today must put usage on `assistant_message` events.
 
 Usage fields keep different concepts separate:
 
@@ -172,7 +172,7 @@ Usage fields keep different concepts separate:
 - `total_tokens`: provider-reported total when available; consumers may derive `input + output` only as a compatibility total when it is missing.
 - `cost_total`: the emitter/provider cost estimate for the call, currently interpreted by dashboards as USD. Missing cost means unknown, not free.
 
-Aggregation can be sliced by event timestamp, `pool`, exact `tag`, `agent_name`, `provider`, and `model`. Structured tags make cross-session grouping work: `run:<id>` joins dispatcher/root and child sessions, `repo:<owner/name>` groups work by repository, and `runtime:<runtime>` separates Pi, Hermes, CI, and other emitters. Every runtime that wants to appear in usage totals must emit the shared `usage` shape on `assistant_message` events (or the documented `turn_end` fallback); raw prompts are not required for accounting.
+Aggregation can be sliced by event timestamp, `pool`, exact `tag`, `agent_name`, `provider`, and `model`. Structured tags make cross-session grouping work: `run:<id>` joins dispatcher/root and child sessions, `repo:<owner/name>` groups work by repository, and `runtime:<runtime>` separates Pi, Hermes, CI, and other emitters. Every runtime that wants to appear in `/usage/*` totals today must emit the shared `usage` shape on `assistant_message` events; raw prompts are not required for accounting. A future implementation may add a deduplicated `turn_end` fallback, but producers should not rely on that path until the aggregation code supports it.
 
 Operator examples, assuming `OBS_URL=http://127.0.0.1:43190` and `OBS_AUTH_TOKEN` is set:
 
@@ -190,7 +190,7 @@ curl -sS -H "Authorization: Bearer $OBS_AUTH_TOKEN" \
   "$OBS_URL/usage/top-agents?from=2026-07-01T00:00:00Z&tag=repo:Zighome24/pi-agent-observability&limit=10&sort=tokens"
 ```
 
-The canonical store is still the raw `events` table. Preserve `db/obs.db` plus its WAL files while the service is running, or use `just backup` for a safe snapshot; future rollup tables are caches and must be rebuildable from raw events.
+The canonical store is still the raw `events` table. Preserve `db/obs.db` plus its WAL files while the service is running, or use `just backup` for a safe SQLite backup-API snapshot. `just backup` requires the `sqlite3` CLI so it can avoid unsafe live WAL file copies; future rollup tables are caches and must be rebuildable from raw events.
 
 One thing the opaque payload buys you that a Pi transcript will never give you: the first `agent_start` of every session carries a **full boot snapshot** of exactly what the agent was just told. The fully assembled system prompt verbatim, plus a structured digest of `BuildSystemPromptOptions`: selected tools, prompt guidelines, `--system-prompt` / `--append-system-prompt` overrides, every context file pi loaded (path + bytes + `sha256` + full content), and every skill pi loaded (file body + `sha256` for drift detection). Uncapped, once per session. If you ever need to prove which skills made it into the system prompt for a given run (and which ones quietly didn't), that event is the receipt.
 
