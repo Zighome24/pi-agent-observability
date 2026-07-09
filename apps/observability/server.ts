@@ -147,14 +147,19 @@ function readUsageFilters(url: URL) {
   };
 }
 
-function readUsageLimit(url: URL): number {
-  const raw = parseInt(url.searchParams.get("limit") ?? "10", 10);
-  if (!Number.isFinite(raw)) return 10;
-  return Math.max(1, Math.min(raw, 100));
+function readUsageLimit(url: URL): number | null {
+  const rawParam = url.searchParams.get("limit");
+  if (rawParam === null) return 10;
+  if (!/^\d+$/.test(rawParam)) return null;
+  const raw = parseInt(rawParam, 10);
+  if (!Number.isFinite(raw) || raw < 1) return null;
+  return Math.min(raw, 100);
 }
 
-function readUsageSort(url: URL): "cost" | "tokens" {
-  return url.searchParams.get("sort") === "tokens" ? "tokens" : "cost";
+function readUsageSort(url: URL): "cost" | "tokens" | null {
+  const raw = url.searchParams.get("sort") ?? "cost";
+  if (raw !== "cost" && raw !== "tokens") return null;
+  return raw;
 }
 
 function checkAuth(req: Request): boolean {
@@ -370,11 +375,15 @@ async function handle(req: Request): Promise<Response> {
   }
 
   if (pathname === "/usage/top-runs" && method === "GET") {
+    const limit = readUsageLimit(url);
+    const sort = readUsageSort(url);
+    if (limit === null) return jsonResponse({ error: "limit must be a positive integer" }, 400);
+    if (sort === null) return jsonResponse({ error: "sort must be cost or tokens" }, 400);
     try {
       return jsonResponse(getUsageTopRuns(db, {
         ...readUsageFilters(url),
-        limit: readUsageLimit(url),
-        sort: readUsageSort(url),
+        limit,
+        sort,
       }));
     } catch (err: any) {
       return jsonResponse({ error: err.message }, 500);
@@ -382,11 +391,15 @@ async function handle(req: Request): Promise<Response> {
   }
 
   if (pathname === "/usage/top-agents" && method === "GET") {
+    const limit = readUsageLimit(url);
+    const sort = readUsageSort(url);
+    if (limit === null) return jsonResponse({ error: "limit must be a positive integer" }, 400);
+    if (sort === null) return jsonResponse({ error: "sort must be cost or tokens" }, 400);
     try {
       return jsonResponse(getUsageTopAgents(db, {
         ...readUsageFilters(url),
-        limit: readUsageLimit(url),
-        sort: readUsageSort(url),
+        limit,
+        sort,
       }));
     } catch (err: any) {
       return jsonResponse({ error: err.message }, 500);

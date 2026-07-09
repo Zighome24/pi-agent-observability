@@ -74,6 +74,7 @@ try {
     event({ event_id: "t1", type: "turn_end", session_id: "s1", agent_name: "dispatcher", tags: ["run:r1", "repo:repoA"], payload: { turn_index: 0, usage: { input: 100, output: 50, total_tokens: 150, cost_total: 99 } }, seq: 1 }),
     event({ event_id: "a2", session_id: "s2", agent_name: "child", tags: ["run:r1", "repo:repoA"], model: "m2", usage: { input: 200, output: 80, cache_read: 0, cache_write: 20, total_tokens: 300, cost_total: 1.2 } }),
     event({ event_id: "a3", session_id: "s3", agent_name: "worker", pool: "beta", tags: ["run:r2", "repo:repoB"], provider: "q", model: "m1", ts: "2026-01-02T00:00:00.000Z", usage: { input: 10, output: 5, total_tokens: 15, cost_total: 0.1 } }),
+    event({ event_id: "a4", session_id: "s4", agent_name: "worker", pool: "beta", tags: ["run:r2", "repo:repoB"], provider: "q", model: "m1", ts: "2026-01-02T01:00:00.000Z", usage: { input: 10, output: 5, cache_read: 100, cache_write: 50, total_tokens: 0, cost_total: 0.2 } }),
   ];
 
   const ingest = await fetch(`${base}/events`, {
@@ -84,20 +85,21 @@ try {
   if (!ingest.ok) throw new Error(`ingest failed: ${ingest.status} ${await ingest.text()}`);
 
   const summary = await getJson("/usage/summary");
-  assertEqual(summary.totals.total_tokens, 475, "summary total tokens excludes turn_end");
-  assertEqual(summary.totals.input_tokens, 310, "summary input tokens");
-  assertEqual(summary.totals.output_tokens, 135, "summary output tokens");
-  assertEqual(summary.totals.cache_read_tokens, 10, "summary cache read");
-  assertEqual(summary.totals.cache_write_tokens, 20, "summary cache write");
-  assertClose(summary.totals.total_cost, 1.8, "summary cost");
-  assertEqual(summary.totals.call_count, 3, "summary call count");
+  assertEqual(summary.totals.total_tokens, 490, "summary total tokens excludes turn_end");
+  assertEqual(summary.totals.input_tokens, 320, "summary input tokens");
+  assertEqual(summary.totals.output_tokens, 140, "summary output tokens");
+  assertEqual(summary.totals.cache_read_tokens, 110, "summary cache read");
+  assertEqual(summary.totals.cache_write_tokens, 70, "summary cache write");
+  assertClose(summary.totals.cost_total, 2.0, "summary cost_total");
+  assertEqual(Object.prototype.hasOwnProperty.call(summary.totals, "total_cost"), false, "usage totals use cost_total field");
+  assertEqual(summary.totals.call_count, 4, "summary call count");
 
   assertEqual((await getJson("/usage/summary?pool=alpha")).totals.total_tokens, 460, "pool filter");
   assertEqual((await getJson("/usage/summary?tag=run:r1")).totals.total_tokens, 460, "tag filter");
-  assertEqual((await getJson("/usage/summary?provider=q")).totals.total_tokens, 15, "provider filter");
+  assertEqual((await getJson("/usage/summary?provider=q")).totals.total_tokens, 30, "provider filter derives zero total_tokens from input+output only");
   assertEqual((await getJson("/usage/summary?model=m2")).totals.total_tokens, 300, "model filter");
   assertEqual((await getJson("/usage/summary?agent_name=child")).totals.total_tokens, 300, "agent filter");
-  assertEqual((await getJson("/usage/summary?from=2026-01-02T00:00:00.000Z")).totals.total_tokens, 15, "from filter");
+  assertEqual((await getJson("/usage/summary?from=2026-01-02T00:00:00.000Z")).totals.total_tokens, 30, "from filter");
 
   const runs = await getJson("/usage/top-runs?sort=tokens&limit=1");
   assertEqual(runs.items[0].id, "r1", "top-runs groups run tag");
@@ -105,6 +107,12 @@ try {
 
   const agents = await getJson("/usage/top-agents?sort=cost&limit=1");
   assertEqual(agents.items[0].id, "child", "top-agents sorted by cost");
+
+
+  const invalidSort = await fetch(`${base}/usage/top-runs?sort=bogus`, { headers: { authorization: `Bearer ${token}` } });
+  assertEqual(invalidSort.status, 400, "invalid usage sort is rejected");
+  const invalidLimit = await fetch(`${base}/usage/top-agents?limit=0`, { headers: { authorization: `Bearer ${token}` } });
+  assertEqual(invalidLimit.status, 400, "invalid usage limit is rejected");
 
   const series = await getJson("/usage/timeseries?bucket=day&group_by=pool");
   assertEqual(series.points.length, 2, "timeseries day/pool point count");

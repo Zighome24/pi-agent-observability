@@ -300,14 +300,14 @@ const USAGE_TOTALS_SQL = `
   COALESCE(SUM(COALESCE(json_extract(e.payload_json, '$.usage.output'), 0)), 0) AS output_tokens,
   COALESCE(SUM(COALESCE(json_extract(e.payload_json, '$.usage.cache_read'), 0)), 0) AS cache_read_tokens,
   COALESCE(SUM(COALESCE(json_extract(e.payload_json, '$.usage.cache_write'), 0)), 0) AS cache_write_tokens,
-  COALESCE(SUM(COALESCE(
-    json_extract(e.payload_json, '$.usage.total_tokens'),
-    COALESCE(json_extract(e.payload_json, '$.usage.input'), 0)
-      + COALESCE(json_extract(e.payload_json, '$.usage.output'), 0)
-      + COALESCE(json_extract(e.payload_json, '$.usage.cache_read'), 0)
-      + COALESCE(json_extract(e.payload_json, '$.usage.cache_write'), 0)
-  )), 0) AS total_tokens,
-  COALESCE(SUM(COALESCE(json_extract(e.payload_json, '$.usage.cost_total'), 0)), 0) AS total_cost,
+  COALESCE(SUM(
+    CASE
+      WHEN COALESCE(json_extract(e.payload_json, '$.usage.total_tokens'), 0) > 0 THEN json_extract(e.payload_json, '$.usage.total_tokens')
+      ELSE COALESCE(json_extract(e.payload_json, '$.usage.input'), 0)
+        + COALESCE(json_extract(e.payload_json, '$.usage.output'), 0)
+    END
+  ), 0) AS total_tokens,
+  COALESCE(SUM(COALESCE(json_extract(e.payload_json, '$.usage.cost_total'), 0)), 0) AS cost_total,
   COUNT(*) AS call_count,
   COUNT(*) AS event_count
 `;
@@ -335,7 +335,7 @@ function totals(row: any) {
     cache_read_tokens: Number(row?.cache_read_tokens ?? 0),
     cache_write_tokens: Number(row?.cache_write_tokens ?? 0),
     total_tokens: Number(row?.total_tokens ?? 0),
-    total_cost: Number(row?.total_cost ?? 0),
+    cost_total: Number(row?.cost_total ?? 0),
     call_count: Number(row?.call_count ?? 0),
     event_count: Number(row?.event_count ?? 0),
   };
@@ -364,7 +364,7 @@ export function getUsageTimeseries(db: Database, options: UsageTimeseriesOptions
     SELECT ${bucketExpr} AS bucket, ${groupExpr} AS group_value, ${USAGE_TOTALS_SQL}
     ${USAGE_SOURCE_SQL}
     GROUP BY bucket, group_value
-    ORDER BY bucket ASC, total_cost DESC, total_tokens DESC
+    ORDER BY bucket ASC, cost_total DESC, total_tokens DESC
   `).all(usageParams(options)) as any[];
   return {
     bucket: options.bucket,
@@ -377,7 +377,7 @@ function getUsageTop(db: Database, filters: UsageTopOptions, dimension: "run" | 
   const groupExpr = dimension === "run"
     ? `COALESCE(${tagValueExpr("run:")}, e.session_id)`
     : "COALESCE(s.agent_name, 'unknown')";
-  const orderExpr = filters.sort === "cost" ? "total_cost" : "total_tokens";
+  const orderExpr = filters.sort === "cost" ? "cost_total" : "total_tokens";
   const rows = db.query(`
     SELECT ${groupExpr} AS id, ${USAGE_TOTALS_SQL}
     ${USAGE_SOURCE_SQL}

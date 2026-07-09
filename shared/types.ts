@@ -324,7 +324,7 @@ export interface UsageTotals {
   cache_read_tokens: number;
   cache_write_tokens: number;
   total_tokens: number;
-  total_cost: number;
+  cost_total: number;
   /** Counted assistant_message usage rows. Same as event_count for the MVP source. */
   call_count: number;
   /** Counted assistant_message usage events. */
