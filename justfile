@@ -194,6 +194,16 @@ build-steelman-web:
 validate-steelman:
   @STEELMAN_PORT="{{steelman_port}}" bun apps/steelman/scripts/validate-steelman.ts
 
+# Verify usage fixture ingest and usage API totals without external agents
+usage-smoke:
+  @bun scripts/check-usage-api.ts
+
+# Run local smoke checks for observability protocol and usage analytics
+smoke:
+  @bun scripts/check-protocol-fixtures.ts
+  @bun scripts/check-run-grouping.ts
+  @bun scripts/check-usage-api.ts
+
 # Create a timestamped backup of the active SQLite database
 backup:
   #!/usr/bin/env bash
