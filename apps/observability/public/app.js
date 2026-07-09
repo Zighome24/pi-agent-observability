@@ -6,12 +6,21 @@
 
 // ─── State ──────────────────────────────────────────────────────────────────
 
+const USAGE_DEFAULTS = { range: "7d", from: "", to: "", pool: "", tag: "", provider: "", model: "", agent_name: "", sort: "cost", bucket: "day" };
+const USAGE_ENUMS = { range: ["24h", "7d", "30d", "all", "custom"], sort: ["cost", "tokens"], bucket: ["day", "week", "month"] };
+function defaultUsageState() { return { ...USAGE_DEFAULTS }; }
+function normalizeUsageKey(key, value) {
+  const v = value ?? "";
+  const allowed = USAGE_ENUMS[key];
+  return allowed && !allowed.includes(v) ? USAGE_DEFAULTS[key] : v;
+}
+
 const STATE = {
   // V3 regression fix: token must come from ?token=… query param. The hash is
   // for shareable view-state only; we don't want the token in shared URLs.
   token: new URLSearchParams(location.search).get("token") ?? "",
   view: "single", mode: "form", pool: "", tag: "", source: "", search: "", sort: "latest", hideAfter: "30m", showHidden: false,
-  usage: { range: "7d", from: "", to: "", pool: "", tag: "", provider: "", model: "", agent_name: "", sort: "cost", bucket: "day" },
+  usage: defaultUsageState(),
   typeFilter: new Set(), autoScroll: true,
   selectedSessionId: null, sessions: [], events: [], sessionsLoaded: false, hiddenSessions: loadHiddenSessions(),
   sidebarCollapsed: loadSidebarCollapsed(),
@@ -23,6 +32,9 @@ const STATE = {
 };
 
 window.__OBS_STATE = STATE;
+window.__USAGE_DEFAULTS = USAGE_DEFAULTS;
+window.__defaultUsageState = defaultUsageState;
+window.__normalizeUsageKey = normalizeUsageKey;
 
 // ─── URL state ──────────────────────────────────────────────────────────────
 
@@ -54,9 +66,9 @@ function loadURLState() {
     window.__restoreAutoAdd = p.get("auto_add") !== "0";
     autoAddCB.checked = window.__restoreAutoAdd;
   }
-  for (const key of ["range", "from", "to", "pool", "tag", "provider", "model", "agent_name", "sort", "bucket"]) {
+  for (const key of Object.keys(USAGE_DEFAULTS)) {
     const hashKey = `usage_${key}`;
-    if (p.has(hashKey)) STATE.usage[key] = p.get(hashKey) ?? "";
+    if (p.has(hashKey)) STATE.usage[key] = normalizeUsageKey(key, p.get(hashKey));
   }
 }
 
@@ -85,8 +97,7 @@ function saveURLState() {
   }
   if (STATE.view === "usage") {
     for (const [key, val] of Object.entries(STATE.usage ?? {})) {
-      const defaults = { range: "7d", from: "", to: "", pool: "", tag: "", provider: "", model: "", agent_name: "", sort: "cost", bucket: "day" };
-      if (val && val !== defaults[key]) p.set(`usage_${key}`, val);
+      if (val && val !== USAGE_DEFAULTS[key]) p.set(`usage_${key}`, val);
     }
   }
   const newHash = "#" + p.toString();

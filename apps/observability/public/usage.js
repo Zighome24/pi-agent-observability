@@ -2,6 +2,7 @@
 (function() {
 const STATE = window.__OBS_STATE;
 if (!STATE) return;
+const USAGE_DEFAULTS = window.__USAGE_DEFAULTS || { range: "7d", from: "", to: "", pool: "", tag: "", provider: "", model: "", agent_name: "", sort: "cost", bucket: "day" };
 
 const $ = s => document.querySelector(s);
 const fields = {
@@ -25,8 +26,11 @@ function apiUrl(path, params = {}) {
 function fmtInt(n) { return Math.round(Number(n || 0)).toLocaleString(); }
 function fmtCost(n) { return `$${Number(n || 0).toFixed(4)}`; }
 function esc(s) { return String(s ?? "unknown").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c])); }
-function toLocalInput(iso) { return iso ? iso.slice(0, 16) : ""; }
-function fromLocalInput(v) { return v ? new Date(v).toISOString() : ""; }
+function fromLocalInput(v) {
+  if (!v) return "";
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? "" : d.toISOString();
+}
 
 function rangeBounds() {
   const now = new Date();
@@ -55,7 +59,11 @@ function syncControlsFromState() {
 }
 
 function syncStateFromControls() {
-  for (const [k, el] of Object.entries(fields)) if (el) STATE.usage[k] = el.value.trim?.() ?? el.value;
+  for (const [k, el] of Object.entries(fields)) {
+    if (!el) continue;
+    const value = el.value.trim?.() ?? el.value;
+    STATE.usage[k] = window.__normalizeUsageKey?.(k, value) ?? value;
+  }
 }
 
 function cards(t = {}) {
@@ -95,6 +103,8 @@ function chart(points, metric) {
 function aggregateModels(points) {
   const m = new Map();
   for (const p of points) {
+    // The current API groups by model name only; keep the UI label model-only so
+    // equal model names from different providers are not presented as provider/model.
     const id = p.group || "unknown";
     const row = m.get(id) || { id, total_tokens: 0, cost_total: 0, call_count: 0 };
     row.total_tokens += Number(p.total_tokens || 0); row.cost_total += Number(p.cost_total || 0); row.call_count += Number(p.call_count || 0);
@@ -133,6 +143,7 @@ async function loadUsage() {
     $("#usage-chart-note").textContent = `${STATE.usage.bucket} buckets · ${STATE.usage.sort}`;
     $("#usage-updated").textContent = `updated ${new Date().toLocaleTimeString()}`;
   } catch (err) {
+    if (seq !== loadingSeq) return;
     $("#usage-updated").innerHTML = `<span class="usage-error">${esc(err.message)}</span>`;
     cards({}); chart([], STATE.usage.sort);
     for (const id of ["#usage-top-runs", "#usage-top-agents", "#usage-top-models"]) $(id).innerHTML = `<div class="usage-empty">Unable to load usage data.</div>`;
@@ -147,7 +158,7 @@ function apply() {
 }
 
 function reset() {
-  STATE.usage = { range: "7d", from: "", to: "", pool: "", tag: "", provider: "", model: "", agent_name: "", sort: "cost", bucket: "day" };
+  STATE.usage = window.__defaultUsageState?.() || { ...USAGE_DEFAULTS };
   syncControlsFromState();
   window.setView?.("usage");
   loadUsage();
