@@ -49,6 +49,37 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_events_session_seq ON events(session_id, s
 CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts);
 CREATE INDEX IF NOT EXISTS idx_events_pool ON events(pool);
 CREATE INDEX IF NOT EXISTS idx_events_type ON events(type);
+
+CREATE TABLE IF NOT EXISTS usage_rollups_daily (
+  bucket       TEXT NOT NULL,
+  pool         TEXT NOT NULL DEFAULT 'default',
+  agent_name   TEXT NOT NULL DEFAULT '',
+  provider     TEXT NOT NULL DEFAULT '',
+  model        TEXT NOT NULL DEFAULT '',
+  run_id       TEXT NOT NULL DEFAULT '',
+  repo         TEXT NOT NULL DEFAULT '',
+  session_id   TEXT NOT NULL DEFAULT '',
+  tags_json    TEXT NOT NULL DEFAULT '[]',
+  input_tokens INTEGER NOT NULL DEFAULT 0,
+  output_tokens INTEGER NOT NULL DEFAULT 0,
+  cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+  cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+  total_tokens INTEGER NOT NULL DEFAULT 0,
+  cost_total   REAL NOT NULL DEFAULT 0,
+  call_count   INTEGER NOT NULL DEFAULT 0,
+  event_count  INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (bucket, pool, agent_name, provider, model, run_id, repo, session_id, tags_json)
+);
+CREATE INDEX IF NOT EXISTS idx_usage_rollups_daily_bucket ON usage_rollups_daily(bucket);
+CREATE INDEX IF NOT EXISTS idx_usage_rollups_daily_pool ON usage_rollups_daily(pool);
+CREATE INDEX IF NOT EXISTS idx_usage_rollups_daily_model ON usage_rollups_daily(provider, model);
+CREATE INDEX IF NOT EXISTS idx_usage_rollups_daily_run ON usage_rollups_daily(run_id);
+
+CREATE TABLE IF NOT EXISTS usage_rollup_meta (
+  key        TEXT PRIMARY KEY,
+  value      TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `;
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -63,6 +94,7 @@ export interface PreparedQueries {
   getSessionEventsSince: ReturnType<Database["query"]>;
   getSessionStats: ReturnType<Database["query"]>;
   countTotals: ReturnType<Database["query"]>;
+  upsertUsageRollupDaily: ReturnType<Database["query"]>;
 }
 
 // ─── Init ───────────────────────────────────────────────────────────────────
@@ -72,6 +104,10 @@ export function createDb(path: string): Database {
   db.run("PRAGMA journal_mode = WAL");
   db.run("PRAGMA busy_timeout = 5000");
   db.run(SCHEMA);
+  const rollupColumns = db.query("PRAGMA table_info(usage_rollups_daily)").all() as Array<{ name: string }>;
+  if (!rollupColumns.some((column) => column.name === "session_id")) {
+    db.run("ALTER TABLE usage_rollups_daily ADD COLUMN session_id TEXT NOT NULL DEFAULT ''");
+  }
   return db;
 }
 
@@ -242,6 +278,49 @@ export function prepare(db: Database): PreparedQueries {
       (SELECT COUNT(*) FROM sessions) AS sessions_total
   `);
 
+  // ── Incremental usage rollup update for newly inserted usage events ─────
+  const upsertUsageRollupDaily = db.query(`
+    INSERT INTO usage_rollups_daily
+      (bucket, pool, agent_name, provider, model, run_id, repo, session_id, tags_json,
+       input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, total_tokens, cost_total, call_count, event_count)
+    SELECT
+      substr(e.ts, 1, 10) AS bucket,
+      e.pool,
+      COALESCE(s.agent_name, '') AS agent_name,
+      COALESCE(e.provider, s.provider, '') AS provider,
+      COALESCE(e.model, s.model, '') AS model,
+      COALESCE((SELECT substr(value, 5) FROM json_each(e.tags_json) WHERE value LIKE 'run:%' LIMIT 1), '') AS run_id,
+      COALESCE((SELECT substr(value, 6) FROM json_each(e.tags_json) WHERE value LIKE 'repo:%' LIMIT 1), '') AS repo,
+      e.session_id,
+      e.tags_json,
+      COALESCE(json_extract(e.payload_json, '$.usage.input'), 0) AS input_tokens,
+      COALESCE(json_extract(e.payload_json, '$.usage.output'), 0) AS output_tokens,
+      COALESCE(json_extract(e.payload_json, '$.usage.cache_read'), 0) AS cache_read_tokens,
+      COALESCE(json_extract(e.payload_json, '$.usage.cache_write'), 0) AS cache_write_tokens,
+      CASE
+        WHEN COALESCE(json_extract(e.payload_json, '$.usage.total_tokens'), 0) > 0 THEN json_extract(e.payload_json, '$.usage.total_tokens')
+        ELSE COALESCE(json_extract(e.payload_json, '$.usage.input'), 0)
+          + COALESCE(json_extract(e.payload_json, '$.usage.output'), 0)
+      END AS total_tokens,
+      COALESCE(json_extract(e.payload_json, '$.usage.cost_total'), 0) AS cost_total,
+      1 AS call_count,
+      1 AS event_count
+    FROM events e
+    LEFT JOIN sessions s ON s.session_id = e.session_id
+    WHERE e.event_id = $event_id
+      AND e.type = 'assistant_message'
+      AND json_type(e.payload_json, '$.usage') IS NOT NULL
+    ON CONFLICT(bucket, pool, agent_name, provider, model, run_id, repo, session_id, tags_json) DO UPDATE SET
+      input_tokens = usage_rollups_daily.input_tokens + excluded.input_tokens,
+      output_tokens = usage_rollups_daily.output_tokens + excluded.output_tokens,
+      cache_read_tokens = usage_rollups_daily.cache_read_tokens + excluded.cache_read_tokens,
+      cache_write_tokens = usage_rollups_daily.cache_write_tokens + excluded.cache_write_tokens,
+      total_tokens = usage_rollups_daily.total_tokens + excluded.total_tokens,
+      cost_total = usage_rollups_daily.cost_total + excluded.cost_total,
+      call_count = usage_rollups_daily.call_count + excluded.call_count,
+      event_count = usage_rollups_daily.event_count + excluded.event_count
+  `);
+
   return {
     insertEvent,
     upsertSession,
@@ -252,6 +331,7 @@ export function prepare(db: Database): PreparedQueries {
     getSessionStats,
     getSessionContext,
     countTotals,
+    upsertUsageRollupDaily,
   };
 }
 
@@ -341,28 +421,113 @@ function totals(row: any) {
   };
 }
 
+function hasCompleteUsageRollups(db: Database): boolean {
+  const row = db.query("SELECT value FROM usage_rollup_meta WHERE key = 'complete'").get() as any;
+  return row?.value === "true";
+}
+
+const ROLLUP_SOURCE_SQL = `
+  FROM usage_rollups_daily r
+  WHERE ($from = '' OR r.bucket >= substr($from, 1, 10))
+    AND ($to = '' OR r.bucket <= substr($to, 1, 10))
+    AND ($pool = '' OR r.pool = $pool)
+    AND ($tag = '' OR EXISTS (SELECT 1 FROM json_each(r.tags_json) WHERE value = $tag))
+    AND ($agent_name = '' OR r.agent_name = $agent_name)
+    AND ($provider = '' OR r.provider = $provider)
+    AND ($model = '' OR r.model = $model)
+`;
+
+const ROLLUP_TOTALS_SQL = `
+  COALESCE(SUM(r.input_tokens), 0) AS input_tokens,
+  COALESCE(SUM(r.output_tokens), 0) AS output_tokens,
+  COALESCE(SUM(r.cache_read_tokens), 0) AS cache_read_tokens,
+  COALESCE(SUM(r.cache_write_tokens), 0) AS cache_write_tokens,
+  COALESCE(SUM(r.total_tokens), 0) AS total_tokens,
+  COALESCE(SUM(r.cost_total), 0) AS cost_total,
+  COALESCE(SUM(r.call_count), 0) AS call_count,
+  COALESCE(SUM(r.event_count), 0) AS event_count
+`;
+
+
+export function rebuildUsageRollups(db: Database): { rows: number; source_events: number } {
+  const result = db.transaction(() => {
+    db.run("DELETE FROM usage_rollups_daily");
+    db.run("DELETE FROM usage_rollup_meta WHERE key IN ('complete', 'rebuilt_at')");
+    const insert = db.run(`
+      INSERT INTO usage_rollups_daily
+        (bucket, pool, agent_name, provider, model, run_id, repo, session_id, tags_json,
+         input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, total_tokens, cost_total, call_count, event_count)
+      SELECT
+        substr(e.ts, 1, 10) AS bucket,
+        e.pool,
+        COALESCE(s.agent_name, '') AS agent_name,
+        COALESCE(e.provider, s.provider, '') AS provider,
+        COALESCE(e.model, s.model, '') AS model,
+        COALESCE((SELECT substr(value, 5) FROM json_each(e.tags_json) WHERE value LIKE 'run:%' LIMIT 1), '') AS run_id,
+        COALESCE((SELECT substr(value, 6) FROM json_each(e.tags_json) WHERE value LIKE 'repo:%' LIMIT 1), '') AS repo,
+        e.session_id,
+        e.tags_json,
+        SUM(COALESCE(json_extract(e.payload_json, '$.usage.input'), 0)) AS input_tokens,
+        SUM(COALESCE(json_extract(e.payload_json, '$.usage.output'), 0)) AS output_tokens,
+        SUM(COALESCE(json_extract(e.payload_json, '$.usage.cache_read'), 0)) AS cache_read_tokens,
+        SUM(COALESCE(json_extract(e.payload_json, '$.usage.cache_write'), 0)) AS cache_write_tokens,
+        SUM(CASE
+          WHEN COALESCE(json_extract(e.payload_json, '$.usage.total_tokens'), 0) > 0 THEN json_extract(e.payload_json, '$.usage.total_tokens')
+          ELSE COALESCE(json_extract(e.payload_json, '$.usage.input'), 0)
+            + COALESCE(json_extract(e.payload_json, '$.usage.output'), 0)
+        END) AS total_tokens,
+        SUM(COALESCE(json_extract(e.payload_json, '$.usage.cost_total'), 0)) AS cost_total,
+        COUNT(*) AS call_count,
+        COUNT(*) AS event_count
+      FROM events e
+      LEFT JOIN sessions s ON s.session_id = e.session_id
+      WHERE e.type = 'assistant_message'
+        AND json_type(e.payload_json, '$.usage') IS NOT NULL
+      GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9
+    `);
+    db.query("INSERT INTO usage_rollup_meta (key, value) VALUES ('complete', 'true'), ('rebuilt_at', datetime('now'))").run();
+    const count = db.query("SELECT COUNT(*) AS count FROM events WHERE type = 'assistant_message' AND json_type(payload_json, '$.usage') IS NOT NULL").get() as any;
+    return { rows: insert.changes, source_events: Number(count?.count ?? 0) };
+  })();
+  return result;
+}
+
 export function getUsageSummary(db: Database, filters: UsageFilters): UsageSummaryResponse {
+  if (hasCompleteUsageRollups(db)) {
+    const row = db.query(`SELECT ${ROLLUP_TOTALS_SQL} ${ROLLUP_SOURCE_SQL}`).get(usageParams(filters)) as any;
+    return { totals: totals(row), source: "rollups" };
+  }
   const row = db.query(`SELECT ${USAGE_TOTALS_SQL} ${USAGE_SOURCE_SQL}`).get(usageParams(filters)) as any;
-  return { totals: totals(row) };
+  return { totals: totals(row), source: "raw" };
 }
 
 export function getUsageTimeseries(db: Database, options: UsageTimeseriesOptions): UsageTimeseriesResponse {
-  const bucketExpr = options.bucket === "month"
-    ? "substr(e.ts, 1, 7)"
-    : options.bucket === "week"
-      ? "strftime('%Y-W%W', e.ts)"
-      : "substr(e.ts, 1, 10)";
-  const groupExprs: Record<UsageGroupBy, string> = {
+  const useRollups = hasCompleteUsageRollups(db);
+  const bucketExpr = useRollups
+    ? (options.bucket === "month" ? "substr(r.bucket, 1, 7)" : options.bucket === "week" ? "strftime('%Y-W%W', r.bucket)" : "r.bucket")
+    : (options.bucket === "month"
+      ? "substr(e.ts, 1, 7)"
+      : options.bucket === "week"
+        ? "strftime('%Y-W%W', e.ts)"
+        : "substr(e.ts, 1, 10)");
+  const rawGroupExprs: Record<UsageGroupBy, string> = {
     pool: "e.pool",
     model: "COALESCE(e.model, s.model, 'unknown')",
     agent: "COALESCE(s.agent_name, 'unknown')",
     run: `COALESCE(${tagValueExpr("run:")}, 'unknown')`,
     repo: `COALESCE(${tagValueExpr("repo:")}, 'unknown')`,
   };
-  const groupExpr = options.group_by ? groupExprs[options.group_by] : "'all'";
+  const rollupGroupExprs: Record<UsageGroupBy, string> = {
+    pool: "r.pool",
+    model: "COALESCE(NULLIF(r.model, ''), 'unknown')",
+    agent: "COALESCE(NULLIF(r.agent_name, ''), 'unknown')",
+    run: "COALESCE(NULLIF(r.run_id, ''), 'unknown')",
+    repo: "COALESCE(NULLIF(r.repo, ''), 'unknown')",
+  };
+  const groupExpr = options.group_by ? (useRollups ? rollupGroupExprs[options.group_by] : rawGroupExprs[options.group_by]) : "'all'";
   const rows = db.query(`
-    SELECT ${bucketExpr} AS bucket, ${groupExpr} AS group_value, ${USAGE_TOTALS_SQL}
-    ${USAGE_SOURCE_SQL}
+    SELECT ${bucketExpr} AS bucket, ${groupExpr} AS group_value, ${useRollups ? ROLLUP_TOTALS_SQL : USAGE_TOTALS_SQL}
+    ${useRollups ? ROLLUP_SOURCE_SQL : USAGE_SOURCE_SQL}
     GROUP BY bucket, group_value
     ORDER BY bucket ASC, cost_total DESC, total_tokens DESC
   `).all(usageParams(options)) as any[];
@@ -370,17 +535,19 @@ export function getUsageTimeseries(db: Database, options: UsageTimeseriesOptions
     bucket: options.bucket,
     group_by: options.group_by,
     points: rows.map((row) => ({ bucket: row.bucket, group: row.group_value, ...totals(row) })),
+    source: useRollups ? "rollups" : "raw",
   };
 }
 
 function getUsageTop(db: Database, filters: UsageTopOptions, dimension: "run" | "agent"): UsageTopResponse {
-  const groupExpr = dimension === "run"
-    ? `COALESCE(${tagValueExpr("run:")}, e.session_id)`
-    : "COALESCE(s.agent_name, 'unknown')";
+  const useRollups = hasCompleteUsageRollups(db);
+  const groupExpr = useRollups
+    ? (dimension === "run" ? "COALESCE(NULLIF(r.run_id, ''), r.session_id)" : "COALESCE(NULLIF(r.agent_name, ''), 'unknown')")
+    : (dimension === "run" ? `COALESCE(${tagValueExpr("run:")}, e.session_id)` : "COALESCE(s.agent_name, 'unknown')");
   const orderExpr = filters.sort === "cost" ? "cost_total" : "total_tokens";
   const rows = db.query(`
-    SELECT ${groupExpr} AS id, ${USAGE_TOTALS_SQL}
-    ${USAGE_SOURCE_SQL}
+    SELECT ${groupExpr} AS id, ${useRollups ? ROLLUP_TOTALS_SQL : USAGE_TOTALS_SQL}
+    ${useRollups ? ROLLUP_SOURCE_SQL : USAGE_SOURCE_SQL}
     GROUP BY id
     ORDER BY ${orderExpr} DESC, id ASC
     LIMIT $limit
@@ -389,6 +556,7 @@ function getUsageTop(db: Database, filters: UsageTopOptions, dimension: "run" | 
     dimension,
     sort: filters.sort,
     items: rows.map((row) => ({ id: row.id, ...totals(row) })),
+    source: useRollups ? "rollups" : "raw",
   };
 }
 

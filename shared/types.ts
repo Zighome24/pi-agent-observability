@@ -333,6 +333,8 @@ export interface UsageTotals {
 
 export interface UsageSummaryResponse {
   totals: UsageTotals;
+  /** Storage path used to answer the query. Rollups fall back to raw events until backfilled. */
+  source?: "raw" | "rollups";
 }
 
 export interface UsageTimeseriesPoint extends UsageTotals {
@@ -344,6 +346,7 @@ export interface UsageTimeseriesResponse {
   bucket: "day" | "week" | "month";
   group_by?: "pool" | "model" | "agent" | "run" | "repo";
   points: UsageTimeseriesPoint[];
+  source?: "raw" | "rollups";
 }
 
 export interface UsageTopItem extends UsageTotals {
@@ -354,6 +357,7 @@ export interface UsageTopResponse {
   dimension: "run" | "agent";
   sort: "cost" | "tokens";
   items: UsageTopItem[];
+  source?: "raw" | "rollups";
 }
 
 // ─── Limits ─────────────────────────────────────────────────────────────────

@@ -191,6 +191,7 @@ function ingestEvent(event: ObsEvent): string | null {
 
   if (isNew) {
     q.upsertSession.run(toSessionRow(event));
+    q.upsertUsageRollupDaily.run({ $event_id: event.event_id });
   } else {
     q.upsertSessionNoBump.run(toSessionRow(event));
   }

@@ -85,6 +85,7 @@ try {
   if (!ingest.ok) throw new Error(`ingest failed: ${ingest.status} ${await ingest.text()}`);
 
   const summary = await getJson("/usage/summary");
+  assertEqual(summary.source, "raw", "usage falls back to raw events before rollup backfill");
   assertEqual(summary.totals.total_tokens, 490, "summary total tokens excludes turn_end");
   assertEqual(summary.totals.input_tokens, 320, "summary input tokens");
   assertEqual(summary.totals.output_tokens, 140, "summary output tokens");
@@ -108,6 +109,34 @@ try {
   const agents = await getJson("/usage/top-agents?sort=cost&limit=1");
   assertEqual(agents.items[0].id, "child", "top-agents sorted by cost");
 
+  const backfill1 = Bun.spawnSync(["bun", "scripts/backfill-usage-rollups.ts"], {
+    cwd: join(import.meta.dir, ".."),
+    env: { ...process.env, OBS_DB_PATH: dbPath },
+  });
+  if (!backfill1.success) throw new Error(`backfill failed: ${backfill1.stderr.toString()}`);
+  const rollupSummary = await getJson("/usage/summary");
+  assertEqual(rollupSummary.source, "rollups", "usage reads rollups after backfill");
+  assertEqual(rollupSummary.totals.total_tokens, summary.totals.total_tokens, "rollup summary matches raw total tokens");
+  assertClose(rollupSummary.totals.cost_total, summary.totals.cost_total, "rollup summary matches raw cost");
+
+  const backfill2 = Bun.spawnSync(["bun", "scripts/backfill-usage-rollups.ts"], {
+    cwd: join(import.meta.dir, ".."),
+    env: { ...process.env, OBS_DB_PATH: dbPath },
+  });
+  if (!backfill2.success) throw new Error(`second backfill failed: ${backfill2.stderr.toString()}`);
+  const rollupSummary2 = await getJson("/usage/summary");
+  assertEqual(rollupSummary2.totals.total_tokens, summary.totals.total_tokens, "repeat backfill does not double-count");
+
+  const liveAfterBackfill = event({ event_id: "a5", session_id: "s5", agent_name: "worker", ts: "2026-01-03T00:00:00.000Z", usage: { input: 7, output: 8, total_tokens: 15, cost_total: 0.3 } });
+  const liveIngest = await fetch(`${base}/events`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: JSON.stringify(liveAfterBackfill),
+  });
+  if (!liveIngest.ok) throw new Error(`post-backfill ingest failed: ${liveIngest.status} ${await liveIngest.text()}`);
+  const liveRollupSummary = await getJson("/usage/summary");
+  assertEqual(liveRollupSummary.source, "rollups", "post-backfill usage still reads rollups");
+  assertEqual(liveRollupSummary.totals.total_tokens, 505, "ingest path updates rollups for new events");
 
   const invalidSort = await fetch(`${base}/usage/top-runs?sort=bogus`, { headers: { authorization: `Bearer ${token}` } });
   assertEqual(invalidSort.status, 400, "invalid usage sort is rejected");
@@ -115,7 +144,7 @@ try {
   assertEqual(invalidLimit.status, 400, "invalid usage limit is rejected");
 
   const series = await getJson("/usage/timeseries?bucket=day&group_by=pool");
-  assertEqual(series.points.length, 2, "timeseries day/pool point count");
+  assertEqual(series.points.length, 3, "timeseries day/pool point count");
   assertEqual(series.points[0].bucket, "2026-01-01", "timeseries day bucket");
   assertEqual(series.points[0].group, "alpha", "timeseries group");
   assertEqual(series.points[0].total_tokens, 460, "timeseries total");
