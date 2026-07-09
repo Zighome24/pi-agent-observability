@@ -8,7 +8,18 @@
 import { Database } from "bun:sqlite";
 import * as path from "node:path";
 import * as fs from "node:fs";
-import { createDb, prepare, toRow, toSessionRow, rowToSession, rowToEvent } from "./db.js";
+import {
+  createDb,
+  prepare,
+  toRow,
+  toSessionRow,
+  rowToSession,
+  rowToEvent,
+  getUsageSummary,
+  getUsageTimeseries,
+  getUsageTopRuns,
+  getUsageTopAgents,
+} from "./db.js";
 import { MAX_REQUEST_BYTES } from "../../shared/types.js";
 import type { ObsEvent } from "../../shared/types.js";
 
@@ -122,6 +133,28 @@ function textResponse(body: string, status: number, contentType: string): Respon
 
 function readTokenFromQuery(url: URL): string | null {
   return url.searchParams.get("token");
+}
+
+function readUsageFilters(url: URL) {
+  return {
+    from: url.searchParams.get("from") ?? undefined,
+    to: url.searchParams.get("to") ?? undefined,
+    pool: url.searchParams.get("pool") ?? undefined,
+    tag: url.searchParams.get("tag") ?? undefined,
+    agent_name: url.searchParams.get("agent_name") ?? undefined,
+    provider: url.searchParams.get("provider") ?? undefined,
+    model: url.searchParams.get("model") ?? undefined,
+  };
+}
+
+function readUsageLimit(url: URL): number {
+  const raw = parseInt(url.searchParams.get("limit") ?? "10", 10);
+  if (!Number.isFinite(raw)) return 10;
+  return Math.max(1, Math.min(raw, 100));
+}
+
+function readUsageSort(url: URL): "cost" | "tokens" {
+  return url.searchParams.get("sort") === "tokens" ? "tokens" : "cost";
 }
 
 function checkAuth(req: Request): boolean {
@@ -305,6 +338,59 @@ async function handle(req: Request): Promise<Response> {
     }
 
     return jsonResponse({ ingested: ingested.length, rejected });
+  }
+
+  // ── GET /usage/* ───────────────────────────────────────────────────────
+  if (pathname === "/usage/summary" && method === "GET") {
+    try {
+      return jsonResponse(getUsageSummary(db, readUsageFilters(url)));
+    } catch (err: any) {
+      return jsonResponse({ error: err.message }, 500);
+    }
+  }
+
+  if (pathname === "/usage/timeseries" && method === "GET") {
+    const bucketParam = url.searchParams.get("bucket") ?? "day";
+    const groupParam = url.searchParams.get("group_by") ?? undefined;
+    if (!["day", "week", "month"].includes(bucketParam)) {
+      return jsonResponse({ error: "bucket must be day, week, or month" }, 400);
+    }
+    if (groupParam && !["pool", "model", "agent", "run", "repo"].includes(groupParam)) {
+      return jsonResponse({ error: "group_by must be pool, model, agent, run, or repo" }, 400);
+    }
+    try {
+      return jsonResponse(getUsageTimeseries(db, {
+        ...readUsageFilters(url),
+        bucket: bucketParam as "day" | "week" | "month",
+        group_by: groupParam as any,
+      }));
+    } catch (err: any) {
+      return jsonResponse({ error: err.message }, 500);
+    }
+  }
+
+  if (pathname === "/usage/top-runs" && method === "GET") {
+    try {
+      return jsonResponse(getUsageTopRuns(db, {
+        ...readUsageFilters(url),
+        limit: readUsageLimit(url),
+        sort: readUsageSort(url),
+      }));
+    } catch (err: any) {
+      return jsonResponse({ error: err.message }, 500);
+    }
+  }
+
+  if (pathname === "/usage/top-agents" && method === "GET") {
+    try {
+      return jsonResponse(getUsageTopAgents(db, {
+        ...readUsageFilters(url),
+        limit: readUsageLimit(url),
+        sort: readUsageSort(url),
+      }));
+    } catch (err: any) {
+      return jsonResponse({ error: err.message }, 500);
+    }
   }
 
   // ── GET /sessions ──────────────────────────────────────────────────────

@@ -6,7 +6,13 @@
  */
 
 import { Database } from "bun:sqlite";
-import type { ObsEvent, SessionSummary, HealthResponse } from "../../shared/types.js";
+import type {
+  ObsEvent,
+  SessionSummary,
+  UsageSummaryResponse,
+  UsageTimeseriesResponse,
+  UsageTopResponse,
+} from "../../shared/types.js";
 
 // ─── Schema ─────────────────────────────────────────────────────────────────
 
@@ -247,6 +253,151 @@ export function prepare(db: Database): PreparedQueries {
     getSessionContext,
     countTotals,
   };
+}
+
+// ─── Usage analytics ───────────────────────────────────────────────────────
+
+type UsageSort = "cost" | "tokens";
+type UsageBucket = "day" | "week" | "month";
+type UsageGroupBy = "pool" | "model" | "agent" | "run" | "repo";
+
+export interface UsageFilters {
+  from?: string;
+  to?: string;
+  pool?: string;
+  tag?: string;
+  agent_name?: string;
+  provider?: string;
+  model?: string;
+}
+
+export interface UsageTimeseriesOptions extends UsageFilters {
+  bucket: UsageBucket;
+  group_by?: UsageGroupBy;
+}
+
+export interface UsageTopOptions extends UsageFilters {
+  limit: number;
+  sort: UsageSort;
+}
+
+const USAGE_SOURCE_SQL = `
+  FROM events e
+  LEFT JOIN sessions s ON s.session_id = e.session_id
+  WHERE e.type = 'assistant_message'
+    AND json_type(e.payload_json, '$.usage') IS NOT NULL
+    AND ($from = '' OR e.ts >= $from)
+    AND ($to = '' OR e.ts <= $to)
+    AND ($pool = '' OR e.pool = $pool)
+    AND ($tag = '' OR EXISTS (SELECT 1 FROM json_each(e.tags_json) WHERE value = $tag))
+    AND ($agent_name = '' OR COALESCE(s.agent_name, '') = $agent_name)
+    AND ($provider = '' OR COALESCE(e.provider, s.provider, '') = $provider)
+    AND ($model = '' OR COALESCE(e.model, s.model, '') = $model)
+`;
+
+const USAGE_TOTALS_SQL = `
+  COALESCE(SUM(COALESCE(json_extract(e.payload_json, '$.usage.input'), 0)), 0) AS input_tokens,
+  COALESCE(SUM(COALESCE(json_extract(e.payload_json, '$.usage.output'), 0)), 0) AS output_tokens,
+  COALESCE(SUM(COALESCE(json_extract(e.payload_json, '$.usage.cache_read'), 0)), 0) AS cache_read_tokens,
+  COALESCE(SUM(COALESCE(json_extract(e.payload_json, '$.usage.cache_write'), 0)), 0) AS cache_write_tokens,
+  COALESCE(SUM(COALESCE(
+    json_extract(e.payload_json, '$.usage.total_tokens'),
+    COALESCE(json_extract(e.payload_json, '$.usage.input'), 0)
+      + COALESCE(json_extract(e.payload_json, '$.usage.output'), 0)
+      + COALESCE(json_extract(e.payload_json, '$.usage.cache_read'), 0)
+      + COALESCE(json_extract(e.payload_json, '$.usage.cache_write'), 0)
+  )), 0) AS total_tokens,
+  COALESCE(SUM(COALESCE(json_extract(e.payload_json, '$.usage.cost_total'), 0)), 0) AS total_cost,
+  COUNT(*) AS call_count,
+  COUNT(*) AS event_count
+`;
+
+function usageParams(filters: UsageFilters): Record<string, string> {
+  return {
+    $from: filters.from ?? "",
+    $to: filters.to ?? "",
+    $pool: filters.pool ?? "",
+    $tag: filters.tag ?? "",
+    $agent_name: filters.agent_name ?? "",
+    $provider: filters.provider ?? "",
+    $model: filters.model ?? "",
+  };
+}
+
+function tagValueExpr(prefix: string): string {
+  return `(SELECT substr(value, ${prefix.length + 1}) FROM json_each(e.tags_json) WHERE value LIKE '${prefix}%' LIMIT 1)`;
+}
+
+function totals(row: any) {
+  return {
+    input_tokens: Number(row?.input_tokens ?? 0),
+    output_tokens: Number(row?.output_tokens ?? 0),
+    cache_read_tokens: Number(row?.cache_read_tokens ?? 0),
+    cache_write_tokens: Number(row?.cache_write_tokens ?? 0),
+    total_tokens: Number(row?.total_tokens ?? 0),
+    total_cost: Number(row?.total_cost ?? 0),
+    call_count: Number(row?.call_count ?? 0),
+    event_count: Number(row?.event_count ?? 0),
+  };
+}
+
+export function getUsageSummary(db: Database, filters: UsageFilters): UsageSummaryResponse {
+  const row = db.query(`SELECT ${USAGE_TOTALS_SQL} ${USAGE_SOURCE_SQL}`).get(usageParams(filters)) as any;
+  return { totals: totals(row) };
+}
+
+export function getUsageTimeseries(db: Database, options: UsageTimeseriesOptions): UsageTimeseriesResponse {
+  const bucketExpr = options.bucket === "month"
+    ? "substr(e.ts, 1, 7)"
+    : options.bucket === "week"
+      ? "strftime('%Y-W%W', e.ts)"
+      : "substr(e.ts, 1, 10)";
+  const groupExprs: Record<UsageGroupBy, string> = {
+    pool: "e.pool",
+    model: "COALESCE(e.model, s.model, 'unknown')",
+    agent: "COALESCE(s.agent_name, 'unknown')",
+    run: `COALESCE(${tagValueExpr("run:")}, 'unknown')`,
+    repo: `COALESCE(${tagValueExpr("repo:")}, 'unknown')`,
+  };
+  const groupExpr = options.group_by ? groupExprs[options.group_by] : "'all'";
+  const rows = db.query(`
+    SELECT ${bucketExpr} AS bucket, ${groupExpr} AS group_value, ${USAGE_TOTALS_SQL}
+    ${USAGE_SOURCE_SQL}
+    GROUP BY bucket, group_value
+    ORDER BY bucket ASC, total_cost DESC, total_tokens DESC
+  `).all(usageParams(options)) as any[];
+  return {
+    bucket: options.bucket,
+    group_by: options.group_by,
+    points: rows.map((row) => ({ bucket: row.bucket, group: row.group_value, ...totals(row) })),
+  };
+}
+
+function getUsageTop(db: Database, filters: UsageTopOptions, dimension: "run" | "agent"): UsageTopResponse {
+  const groupExpr = dimension === "run"
+    ? `COALESCE(${tagValueExpr("run:")}, e.session_id)`
+    : "COALESCE(s.agent_name, 'unknown')";
+  const orderExpr = filters.sort === "cost" ? "total_cost" : "total_tokens";
+  const rows = db.query(`
+    SELECT ${groupExpr} AS id, ${USAGE_TOTALS_SQL}
+    ${USAGE_SOURCE_SQL}
+    GROUP BY id
+    ORDER BY ${orderExpr} DESC, id ASC
+    LIMIT $limit
+  `).all({ ...usageParams(filters), $limit: filters.limit }) as any[];
+  return {
+    dimension,
+    sort: filters.sort,
+    items: rows.map((row) => ({ id: row.id, ...totals(row) })),
+  };
+}
+
+export function getUsageTopRuns(db: Database, filters: UsageTopOptions): UsageTopResponse {
+  return getUsageTop(db, filters, "run");
+}
+
+export function getUsageTopAgents(db: Database, filters: UsageTopOptions): UsageTopResponse {
+  return getUsageTop(db, filters, "agent");
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
