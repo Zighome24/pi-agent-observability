@@ -1,0 +1,146 @@
+[
+  {
+    "event_id": "usage-fixture-001-assistant",
+    "ts": "2026-01-01T00:00:00.000Z",
+    "type": "assistant_message",
+    "session_id": "usage-dispatcher",
+    "cwd": "/repo",
+    "agent_name": "dispatcher",
+    "pool": "alpha",
+    "tags": ["run:r1", "repo:repoA", "runtime:bun"],
+    "provider": "p",
+    "model": "m1",
+    "payload": {
+      "text": "dispatcher answer",
+      "thinking": "",
+      "tool_call_ids": [],
+      "stop_reason": "stop",
+      "usage": {
+        "input": 100,
+        "output": 50,
+        "cache_read": 10,
+        "cache_write": 0,
+        "total_tokens": 160,
+        "cost_total": 0.5
+      }
+    },
+    "seq": 0
+  },
+  {
+    "event_id": "usage-fixture-002-turn-end",
+    "ts": "2026-01-01T00:00:01.000Z",
+    "type": "turn_end",
+    "session_id": "usage-dispatcher",
+    "cwd": "/repo",
+    "agent_name": "dispatcher",
+    "pool": "alpha",
+    "tags": ["run:r1", "repo:repoA", "runtime:bun"],
+    "provider": "p",
+    "model": "m1",
+    "payload": {
+      "turn_index": 0,
+      "usage": {
+        "input": 100,
+        "output": 50,
+        "total_tokens": 150,
+        "cost_total": 99
+      }
+    },
+    "seq": 1
+  },
+  {
+    "event_id": "usage-fixture-003-assistant",
+    "ts": "2026-01-01T01:00:00.000Z",
+    "type": "assistant_message",
+    "session_id": "usage-child",
+    "cwd": "/repo",
+    "agent_name": "child",
+    "pool": "alpha",
+    "tags": ["run:r1", "repo:repoA", "runtime:bun"],
+    "provider": "p",
+    "model": "m2",
+    "payload": {
+      "text": "child answer",
+      "thinking": "",
+      "tool_call_ids": [],
+      "stop_reason": "stop",
+      "usage": {
+        "input": 200,
+        "output": 80,
+        "cache_read": 0,
+        "cache_write": 20,
+        "total_tokens": 300,
+        "cost_total": 1.2
+      }
+    },
+    "seq": 0
+  },
+  {
+    "event_id": "usage-fixture-004-assistant",
+    "ts": "2026-01-02T00:00:00.000Z",
+    "type": "assistant_message",
+    "session_id": "usage-worker-a",
+    "cwd": "/repo",
+    "agent_name": "worker",
+    "pool": "beta",
+    "tags": ["run:r2", "repo:repoB", "runtime:bun"],
+    "provider": "q",
+    "model": "m1",
+    "payload": {
+      "text": "worker answer",
+      "thinking": "",
+      "tool_call_ids": [],
+      "stop_reason": "stop",
+      "usage": {
+        "input": 10,
+        "output": 5,
+        "total_tokens": 15,
+        "cost_total": 0.1
+      }
+    },
+    "seq": 0
+  },
+  {
+    "event_id": "usage-fixture-005-assistant",
+    "ts": "2026-01-02T01:00:00.000Z",
+    "type": "assistant_message",
+    "session_id": "usage-worker-b",
+    "cwd": "/repo",
+    "agent_name": "worker",
+    "pool": "beta",
+    "tags": ["run:r2", "repo:repoB", "runtime:bun"],
+    "provider": "q",
+    "model": "m1",
+    "payload": {
+      "text": "worker cached answer",
+      "thinking": "",
+      "tool_call_ids": [],
+      "stop_reason": "stop",
+      "usage": {
+        "input": 10,
+        "output": 5,
+        "cache_read": 100,
+        "cache_write": 50,
+        "cost_total": 0.2
+      }
+    },
+    "seq": 0
+  },
+  {
+    "event_id": "usage-fixture-006-empty-usage",
+    "ts": "2026-01-03T00:00:00.000Z",
+    "type": "assistant_message",
+    "session_id": "usage-unknown",
+    "cwd": "/repo",
+    "pool": "gamma",
+    "tags": ["repo:repoC", "runtime:bun"],
+    "payload": {
+      "text": "missing usage fields",
+      "thinking": "",
+      "tool_call_ids": [],
+      "stop_reason": "stop",
+      "usage": {}
+    },
+    "seq": 0
+  }
+]

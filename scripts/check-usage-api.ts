@@ -10,6 +10,38 @@ const port = 43291 + Math.floor(Math.random() * 1000);
 const dir = mkdtempSync(join(tmpdir(), "pi-usage-api-"));
 const dbPath = join(dir, "obs.db");
 const base = `http://127.0.0.1:${port}`;
+const fixturePath = join(import.meta.dir, "fixtures", "usage-event-batch.json");
+
+const expected = {
+  totals: {
+    total_tokens: 490,
+    input_tokens: 320,
+    output_tokens: 140,
+    cache_read_tokens: 110,
+    cache_write_tokens: 70,
+    cost_total: 2.0,
+    call_count: 5,
+    event_count: 5,
+  },
+  filters: {
+    poolAlphaTokens: 460,
+    runR1Tokens: 460,
+    repoBTokens: 30,
+    providerQTokens: 30,
+    modelM2Tokens: 300,
+    childAgentTokens: 300,
+    jan2Tokens: 30,
+    partialFromTokens: 330,
+    partialToTokens: 475,
+  },
+  groups: {
+    runR1Tokens: 460,
+    runR2CacheRead: 100,
+    runR2CacheWrite: 50,
+    dayPoolPointCount: 3,
+    liveAfterBackfillTokens: 505,
+  },
+};
 
 const proc = Bun.spawn(["bun", "server.ts"], {
   cwd: join(import.meta.dir, "..", "apps", "observability"),
@@ -65,20 +97,80 @@ function assertClose(actual: number, expected: number, label: string) {
   }
 }
 
+function assertUsageTotals(actual: any, totals: typeof expected.totals, label: string) {
+  assertEqual(actual.total_tokens, totals.total_tokens, `${label} total tokens`);
+  assertEqual(actual.input_tokens, totals.input_tokens, `${label} input tokens`);
+  assertEqual(actual.output_tokens, totals.output_tokens, `${label} output tokens`);
+  assertEqual(actual.cache_read_tokens, totals.cache_read_tokens, `${label} cache read`);
+  assertEqual(actual.cache_write_tokens, totals.cache_write_tokens, `${label} cache write`);
+  assertClose(actual.cost_total, totals.cost_total, `${label} cost_total`);
+  assertEqual(actual.call_count, totals.call_count, `${label} call count`);
+  assertEqual(actual.event_count, totals.event_count, `${label} event count`);
+}
+
+function itemById(response: any, id: string) {
+  const item = response.items.find((entry: any) => entry.id === id);
+  if (!item) throw new Error(`${response.dimension} item not found: ${id}`);
+  return item;
+}
+
+function pointBy(response: any, match: Record<string, unknown>) {
+  const point = response.points.find((entry: any) => Object.entries(match).every(([key, value]) => entry[key] === value));
+  if (!point) throw new Error(`timeseries point not found: ${JSON.stringify(match)}`);
+  return point;
+}
+
+function validateUsageFixture(events: any[]) {
+  assertEqual(Array.isArray(events), true, "usage fixture is an array");
+  const ids = new Set<string>();
+  const sessionsByRun = new Map<string, Set<string>>();
+  let assistantUsageEvents = 0;
+
+  for (const [index, entry] of events.entries()) {
+    const label = `fixture event ${index}`;
+    assertEqual(typeof entry.event_id, "string", `${label} has event_id`);
+    assertEqual(ids.has(entry.event_id), false, `${label} event_id is unique`);
+    ids.add(entry.event_id);
+    assertEqual(Number.isNaN(Date.parse(entry.ts)), false, `${label} has ISO timestamp`);
+    assertEqual(typeof entry.type, "string", `${label} has type`);
+    assertEqual(typeof entry.session_id, "string", `${label} has session_id`);
+    assertEqual(typeof entry.payload, "object", `${label} has payload`);
+    assertEqual(Array.isArray(entry.tags), true, `${label} tags are an array`);
+
+    for (const tag of entry.tags) {
+      if (typeof tag === "string" && tag.startsWith("run:")) {
+        const sessions = sessionsByRun.get(tag) ?? new Set<string>();
+        sessions.add(entry.session_id);
+        sessionsByRun.set(tag, sessions);
+      }
+    }
+
+    const usage = entry.payload?.usage;
+    if (entry.type === "assistant_message" && usage !== undefined) assistantUsageEvents++;
+    if (usage !== undefined) {
+      assertEqual(typeof usage, "object", `${label} usage is an object`);
+      for (const key of ["input", "output", "cache_read", "cache_write", "total_tokens", "cost_total"] as const) {
+        if (usage[key] !== undefined) {
+          assertEqual(typeof usage[key], "number", `${label} usage.${key} is numeric`);
+          assertEqual(Number.isFinite(usage[key]), true, `${label} usage.${key} is finite`);
+          assertEqual(usage[key] >= 0, true, `${label} usage.${key} is non-negative`);
+        }
+      }
+    }
+  }
+
+  assertEqual(assistantUsageEvents, expected.totals.event_count, "fixture assistant usage event count matches expected totals");
+  assertEqual((sessionsByRun.get("run:r1")?.size ?? 0) > 1, true, "fixture covers multi-session run aggregation");
+}
+
 try {
   await waitForServer();
 
   const unauthorized = await fetch(`${base}/usage/summary`);
   assertEqual(unauthorized.status, 401, "usage endpoints require auth");
 
-  const events = [
-    event({ event_id: "a1", session_id: "s1", agent_name: "dispatcher", tags: ["run:r1", "repo:repoA", "runtime:bun"], usage: { input: 100, output: 50, cache_read: 10, cache_write: 0, total_tokens: 160, cost_total: 0.5 } }),
-    event({ event_id: "t1", type: "turn_end", session_id: "s1", agent_name: "dispatcher", tags: ["run:r1", "repo:repoA"], payload: { turn_index: 0, usage: { input: 100, output: 50, total_tokens: 150, cost_total: 99 } }, seq: 1 }),
-    event({ event_id: "a2", session_id: "s2", agent_name: "child", tags: ["run:r1", "repo:repoA"], model: "m2", usage: { input: 200, output: 80, cache_read: 0, cache_write: 20, total_tokens: 300, cost_total: 1.2 } }),
-    event({ event_id: "a3", session_id: "s3", agent_name: "worker", pool: "beta", tags: ["run:r2", "repo:repoB"], provider: "q", model: "m1", ts: "2026-01-02T00:00:00.000Z", usage: { input: 10, output: 5, total_tokens: 15, cost_total: 0.1 } }),
-    event({ event_id: "a4", session_id: "s4", agent_name: "worker", pool: "beta", tags: ["run:r2", "repo:repoB"], provider: "q", model: "m1", ts: "2026-01-02T01:00:00.000Z", usage: { input: 10, output: 5, cache_read: 100, cache_write: 50, total_tokens: 0, cost_total: 0.2 } }),
-  ];
-
+  const events = await Bun.file(fixturePath).json();
+  validateUsageFixture(events);
   const ingest = await fetch(`${base}/events`, {
     method: "POST",
     headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
@@ -86,35 +178,55 @@ try {
   });
   if (!ingest.ok) throw new Error(`ingest failed: ${ingest.status} ${await ingest.text()}`);
 
+  const ingestBody = await ingest.json();
+  assertEqual(ingestBody.ingested, events.length, "fixture ingest count");
+
   const summary = await getJson("/usage/summary");
   assertEqual(summary.source, "raw", "usage falls back to raw events before rollup backfill");
-  assertEqual(summary.totals.total_tokens, 490, "summary total tokens excludes turn_end");
-  assertEqual(summary.totals.input_tokens, 320, "summary input tokens");
-  assertEqual(summary.totals.output_tokens, 140, "summary output tokens");
-  assertEqual(summary.totals.cache_read_tokens, 110, "summary cache read");
-  assertEqual(summary.totals.cache_write_tokens, 70, "summary cache write");
-  assertClose(summary.totals.cost_total, 2.0, "summary cost_total");
-  assertEqual(Object.prototype.hasOwnProperty.call(summary.totals, "total_cost"), false, "usage totals use cost_total field");
-  assertEqual(summary.totals.call_count, 4, "summary call count");
+  assertUsageTotals(summary.totals, expected.totals, "summary");
+  assertEqual(Object.prototype.hasOwnProperty.call(summary.totals, "total_cost"), false, "usage totals use UI-compatible cost_total field");
 
-  assertEqual((await getJson("/usage/summary?pool=alpha")).totals.total_tokens, 460, "pool filter");
-  assertEqual((await getJson("/usage/summary?tag=run:r1")).totals.total_tokens, 460, "tag filter");
-  assertEqual((await getJson("/usage/summary?provider=q")).totals.total_tokens, 30, "provider filter derives zero total_tokens from input+output only");
-  assertEqual((await getJson("/usage/summary?model=m2")).totals.total_tokens, 300, "model filter");
-  assertEqual((await getJson("/usage/summary?agent_name=child")).totals.total_tokens, 300, "agent filter");
-  assertEqual((await getJson("/usage/summary?from=2026-01-02T00:00:00.000Z")).totals.total_tokens, 30, "from filter");
+  assertEqual((await getJson("/usage/summary?pool=alpha")).totals.total_tokens, expected.filters.poolAlphaTokens, "pool filter");
+  assertEqual((await getJson("/usage/summary?tag=run:r1")).totals.total_tokens, expected.filters.runR1Tokens, "tag/run filter");
+  assertEqual((await getJson("/usage/summary?tag=repo:repoB")).totals.total_tokens, expected.filters.repoBTokens, "tag/repo filter");
+  assertEqual((await getJson("/usage/summary?provider=q")).totals.total_tokens, expected.filters.providerQTokens, "provider filter");
+  assertEqual((await getJson("/usage/summary?model=m2")).totals.total_tokens, expected.filters.modelM2Tokens, "model filter");
+  assertEqual((await getJson("/usage/summary?agent_name=child")).totals.total_tokens, expected.filters.childAgentTokens, "agent filter");
+  assertEqual((await getJson("/usage/summary?from=2026-01-02T00:00:00.000Z&to=2026-01-02T23:59:59.999Z")).totals.total_tokens, expected.filters.jan2Tokens, "date range filter");
   const rawPartialFrom = await getJson("/usage/summary?from=2026-01-01T00:30:00.000Z");
   assertEqual(rawPartialFrom.source, "raw", "partial from initially uses raw");
-  assertEqual(rawPartialFrom.totals.total_tokens, 30, "partial from raw timestamp precision");
+  assertEqual(rawPartialFrom.totals.total_tokens, expected.filters.partialFromTokens, "partial from raw timestamp precision");
   const rawPartialTo = await getJson("/usage/summary?to=2026-01-02T00:30:00.000Z");
-  assertEqual(rawPartialTo.totals.total_tokens, 475, "partial to raw timestamp precision");
+  assertEqual(rawPartialTo.totals.total_tokens, expected.filters.partialToTokens, "partial to raw timestamp precision");
 
-  const runs = await getJson("/usage/top-runs?sort=tokens&limit=1");
-  assertEqual(runs.items[0].id, "r1", "top-runs groups run tag");
-  assertEqual(runs.items[0].total_tokens, 460, "top-runs total");
+  const runs = await getJson("/usage/top-runs?sort=tokens&limit=2");
+  assertEqual(runs.dimension, "run", "top-runs response dimension");
+  assertEqual(runs.sort, "tokens", "top-runs response sort");
+  assertEqual(runs.items.map((entry: any) => entry.id).join(","), "r1,r2", "top-runs ordered by token total");
+  assertEqual(itemById(runs, "r1").total_tokens, expected.groups.runR1Tokens, "top-runs groups multiple sessions by run tag");
+  assertEqual(itemById(runs, "r2").cache_read_tokens, expected.groups.runR2CacheRead, "top-runs preserves cache read totals separately");
+  assertEqual(itemById(runs, "r2").cache_write_tokens, expected.groups.runR2CacheWrite, "top-runs preserves cache write totals separately");
+  assertEqual(itemById(await getJson("/usage/top-runs?sort=tokens&limit=2&provider=q"), "r2").total_tokens, expected.filters.providerQTokens, "top-runs provider filter");
 
-  const agents = await getJson("/usage/top-agents?sort=cost&limit=1");
-  assertEqual(agents.items[0].id, "child", "top-agents sorted by cost");
+  const agents = await getJson("/usage/top-agents?sort=cost&limit=4");
+  assertEqual(agents.dimension, "agent", "top-agents response dimension");
+  assertEqual(agents.items.map((entry: any) => entry.id).join(","), "child,dispatcher,worker,unknown", "top-agents ordered by cost");
+  assertEqual(itemById(agents, "unknown").total_tokens, 0, "missing agent_name groups as unknown and missing usage fields are zero");
+
+  const series = await getJson("/usage/timeseries?bucket=day&group_by=pool");
+  assertEqual(series.bucket, "day", "timeseries echoes day bucket");
+  assertEqual(series.group_by, "pool", "timeseries echoes group_by");
+  assertEqual(series.points.length, expected.groups.dayPoolPointCount, "timeseries day/pool point count includes empty usage day");
+  assertEqual(pointBy(series, { bucket: "2026-01-01", group: "alpha" }).total_tokens, expected.filters.poolAlphaTokens, "timeseries day total");
+  assertEqual(pointBy(await getJson("/usage/timeseries?bucket=day&group_by=pool&pool=beta"), { bucket: "2026-01-02", group: "beta" }).total_tokens, expected.filters.repoBTokens, "timeseries pool filter");
+
+  const weeks = await getJson("/usage/timeseries?bucket=week&group_by=repo");
+  assertEqual(weeks.bucket, "week", "timeseries echoes week bucket");
+  assertEqual(pointBy(weeks, { group: "repoA" }).total_tokens, expected.filters.runR1Tokens, "repo grouping extracts repo tag");
+
+  const months = await getJson("/usage/timeseries?bucket=month&group_by=model");
+  assertEqual(months.bucket, "month", "timeseries echoes month bucket");
+  assertEqual(pointBy(months, { group: "unknown" }).total_tokens, 0, "missing model groups as unknown for UI table compatibility");
 
   const backfill1 = Bun.spawnSync(["bun", "scripts/backfill-usage-rollups.ts"], {
     cwd: join(import.meta.dir, ".."),
@@ -123,11 +235,10 @@ try {
   if (!backfill1.success) throw new Error(`backfill failed: ${backfill1.stderr.toString()}`);
   const rollupSummary = await getJson("/usage/summary");
   assertEqual(rollupSummary.source, "rollups", "usage reads rollups after backfill");
-  assertEqual(rollupSummary.totals.total_tokens, summary.totals.total_tokens, "rollup summary matches raw total tokens");
-  assertClose(rollupSummary.totals.cost_total, summary.totals.cost_total, "rollup summary matches raw cost");
+  assertUsageTotals(rollupSummary.totals, expected.totals, "rollup summary");
   const rollupFullDay = await getJson("/usage/summary?from=2026-01-02T00:00:00.000Z&to=2026-01-02T23:59:59.999Z");
   assertEqual(rollupFullDay.source, "rollups", "full-day-aligned range can use rollups");
-  assertEqual(rollupFullDay.totals.total_tokens, 30, "full-day rollup range matches raw semantics");
+  assertEqual(rollupFullDay.totals.total_tokens, expected.filters.jan2Tokens, "full-day rollup range matches raw semantics");
   const fallbackPartialFrom = await getJson("/usage/summary?from=2026-01-01T00:30:00.000Z");
   assertEqual(fallbackPartialFrom.source, "raw", "partial from falls back to raw after backfill");
   assertEqual(fallbackPartialFrom.totals.total_tokens, rawPartialFrom.totals.total_tokens, "partial from raw/rollup parity");
@@ -141,9 +252,9 @@ try {
   });
   if (!backfill2.success) throw new Error(`second backfill failed: ${backfill2.stderr.toString()}`);
   const rollupSummary2 = await getJson("/usage/summary");
-  assertEqual(rollupSummary2.totals.total_tokens, summary.totals.total_tokens, "repeat backfill does not double-count");
+  assertEqual(rollupSummary2.totals.total_tokens, expected.totals.total_tokens, "repeat backfill does not double-count");
 
-  const liveAfterBackfill = event({ event_id: "a5", session_id: "s5", agent_name: "worker", ts: "2026-01-03T00:00:00.000Z", usage: { input: 7, output: 8, total_tokens: 15, cost_total: 0.3 } });
+  const liveAfterBackfill = event({ event_id: "usage-fixture-007-live", session_id: "usage-live", agent_name: "worker", ts: "2026-01-03T00:00:00.000Z", usage: { input: 7, output: 8, total_tokens: 15, cost_total: 0.3 } });
   const liveIngest = await fetch(`${base}/events`, {
     method: "POST",
     headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
@@ -152,18 +263,14 @@ try {
   if (!liveIngest.ok) throw new Error(`post-backfill ingest failed: ${liveIngest.status} ${await liveIngest.text()}`);
   const liveRollupSummary = await getJson("/usage/summary");
   assertEqual(liveRollupSummary.source, "rollups", "post-backfill usage still reads rollups");
-  assertEqual(liveRollupSummary.totals.total_tokens, 505, "ingest path updates rollups for new events");
+  assertEqual(liveRollupSummary.totals.total_tokens, expected.groups.liveAfterBackfillTokens, "ingest path updates rollups for new events");
 
   const invalidSort = await fetch(`${base}/usage/top-runs?sort=bogus`, { headers: { authorization: `Bearer ${token}` } });
   assertEqual(invalidSort.status, 400, "invalid usage sort is rejected");
   const invalidLimit = await fetch(`${base}/usage/top-agents?limit=0`, { headers: { authorization: `Bearer ${token}` } });
   assertEqual(invalidLimit.status, 400, "invalid usage limit is rejected");
-
-  const series = await getJson("/usage/timeseries?bucket=day&group_by=pool");
-  assertEqual(series.points.length, 3, "timeseries day/pool point count");
-  assertEqual(series.points[0].bucket, "2026-01-01", "timeseries day bucket");
-  assertEqual(series.points[0].group, "alpha", "timeseries group");
-  assertEqual(series.points[0].total_tokens, 460, "timeseries total");
+  const invalidBucket = await fetch(`${base}/usage/timeseries?bucket=hour`, { headers: { authorization: `Bearer ${token}` } });
+  assertEqual(invalidBucket.status, 400, "invalid usage bucket is rejected");
 
   const oldDbPath = join(dir, "old-rollup.db");
   const oldDb = new Database(oldDbPath);
@@ -189,7 +296,7 @@ try {
   `).run();
   migrated.close();
 
-  console.log("usage API smoke passed");
+  console.log("usage API fixture smoke passed");
 } finally {
   proc.kill();
   await proc.exited.catch(() => undefined);
