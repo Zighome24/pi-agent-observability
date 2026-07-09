@@ -11,6 +11,7 @@ const STATE = {
   // for shareable view-state only; we don't want the token in shared URLs.
   token: new URLSearchParams(location.search).get("token") ?? "",
   view: "single", mode: "form", pool: "", tag: "", source: "", search: "", sort: "latest", hideAfter: "30m", showHidden: false,
+  usage: { range: "7d", from: "", to: "", pool: "", tag: "", provider: "", model: "", agent_name: "", sort: "cost", bucket: "day" },
   typeFilter: new Set(), autoScroll: true,
   selectedSessionId: null, sessions: [], events: [], sessionsLoaded: false, hiddenSessions: loadHiddenSessions(),
   sidebarCollapsed: loadSidebarCollapsed(),
@@ -30,7 +31,7 @@ function loadURLState() {
   if (!h) return;
   const p = new URLSearchParams(h);
   if (p.has("view")) STATE.view = p.get("view");
-  if (!["single", "swimlane", "race"].includes(STATE.view)) STATE.view = "single";
+  if (!["single", "swimlane", "race", "usage"].includes(STATE.view)) STATE.view = "single";
   if (p.has("mode")) STATE.mode = p.get("mode");
   else { const stored = localStorage.getItem("obs-mode"); if (stored === "form" || stored === "function") STATE.mode = stored; }
   if (p.has("pool")) { STATE.pool = p.get("pool"); poolFilter.value = STATE.pool; }
@@ -52,6 +53,10 @@ function loadURLState() {
   if (p.has("auto_add")) {
     window.__restoreAutoAdd = p.get("auto_add") !== "0";
     autoAddCB.checked = window.__restoreAutoAdd;
+  }
+  for (const key of ["range", "from", "to", "pool", "tag", "provider", "model", "agent_name", "sort", "bucket"]) {
+    const hashKey = `usage_${key}`;
+    if (p.has(hashKey)) STATE.usage[key] = p.get(hashKey) ?? "";
   }
 }
 
@@ -78,6 +83,12 @@ function saveURLState() {
     if (eid) p.set("eid", eid);
     if (!autoAddLanes()) p.set("auto_add", "0");
   }
+  if (STATE.view === "usage") {
+    for (const [key, val] of Object.entries(STATE.usage ?? {})) {
+      const defaults = { range: "7d", from: "", to: "", pool: "", tag: "", provider: "", model: "", agent_name: "", sort: "cost", bucket: "day" };
+      if (val && val !== defaults[key]) p.set(`usage_${key}`, val);
+    }
+  }
   const newHash = "#" + p.toString();
   if (location.hash !== newHash) history.replaceState(null, "", newHash);
 }
@@ -102,6 +113,7 @@ const filterChips = $("#filter-chips");
 const singlePane = $("#single-pane");
 const swimlaneContainer = $("#swimlane-container");
 const raceContainer = $("#race-container");
+const usageContainer = $("#usage-container");
 const autoAddRow = $("#auto-add-row");
 const autoAddCB = $("#auto-add-lanes");
 const headerBreadcrumb = $("#header-breadcrumb");
@@ -390,15 +402,17 @@ window.setMode = function(mode) {
 };
 
 window.setView = function(mode) {
-  if (!["single", "swimlane", "race"].includes(mode)) mode = "single";
+  if (!["single", "swimlane", "race", "usage"].includes(mode)) mode = "single";
   STATE.view = mode;
   localStorage.setItem("obs-view", mode);
   $("#btn-single").classList.toggle("active", mode === "single");
   $("#btn-swimlane").classList.toggle("active", mode === "swimlane");
   $("#btn-race")?.classList.toggle("active", mode === "race");
+  $("#btn-usage")?.classList.toggle("active", mode === "usage");
   singlePane.style.display = mode === "single" ? "" : "none";
   swimlaneContainer.classList.toggle("active", mode === "swimlane");
   raceContainer?.classList.toggle("active", mode === "race");
+  usageContainer?.classList.toggle("active", mode === "usage");
   if (mode !== "race") window.__raceCloseInspector?.();
   if (sessionSubnav) sessionSubnav.style.display = (mode === "single" && STATE.selectedSessionId) ? "flex" : "none";
   autoAddRow.style.display = mode === "swimlane" || mode === "race" ? "" : "none";
@@ -415,6 +429,7 @@ window.setView = function(mode) {
     }
     window.__raceOnView?.();
   }
+  if (mode === "usage") window.__usageOnView?.();
   if (mode === "single" && STATE.selectedSessionId) {
     setSingleSessionControlsVisible(true);
     loadSession(STATE.selectedSessionId);
