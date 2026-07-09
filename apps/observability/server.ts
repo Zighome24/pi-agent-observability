@@ -184,16 +184,23 @@ function checkAuth(req: Request): boolean {
  * Ingest a single event: insert into DB, upsert session, broadcast to SSE.
  * Returns the event_id if ingested, null if duplicate.
  */
-function ingestEvent(event: ObsEvent): string | null {
+const ingestEventTx = db.transaction((event: ObsEvent): boolean => {
   const row = toRow(event);
   const result = q.insertEvent.run(row);
   const isNew = result.changes > 0;
 
   if (isNew) {
     q.upsertSession.run(toSessionRow(event));
+    q.upsertUsageRollupDaily.run({ $event_id: event.event_id });
   } else {
     q.upsertSessionNoBump.run(toSessionRow(event));
   }
+
+  return isNew;
+});
+
+function ingestEvent(event: ObsEvent): string | null {
+  const isNew = ingestEventTx(event);
 
   if (isNew) {
     broadcastEvent(event);
